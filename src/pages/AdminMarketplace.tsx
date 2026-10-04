@@ -127,8 +127,6 @@ export default function AdminMarketplace() {
                   {provider?.configured ? "API key configured" : "Set LOGSPANEL_API_KEY in Convex"}
                   {" · "}
                   {provider?.syncedProducts ?? 0} products synced
-                  {" · "}
-                  {provider?.lastSyncedAt ? `last sync ${fmtDate(provider.lastSyncedAt)}` : "never synced"}
                 </p>
               </div>
             </div>
