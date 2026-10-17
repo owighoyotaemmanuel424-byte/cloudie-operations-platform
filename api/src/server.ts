@@ -177,7 +177,7 @@ app.post("/api/auth/register", async (c) => {
       httpOnly: true, secure: process.env.NODE_ENV === "production", sameSite: "Lax",
       path: "/", maxAge: 8 * 60 * 60,
     });
-    return c.json({ user: { id: user.id, email: user.email, name: user.name, role: user.role } }, 201);
+    return c.json({ user: { id: user.id, email: user.email, name: user.name, role: user.role }, token }, 201);
   } catch (error) {
     await client.query("ROLLBACK").catch(() => undefined);
     if (typeof error === "object" && error !== null && "code" in error && error.code === "23505") return fail(c, 409, "An account with this email already exists");
@@ -200,8 +200,8 @@ app.post("/api/auth/login", async (c) => {
   if (!user || !user.password_hash || !passwordValid || user.is_suspended || user.is_terminated) {
     return fail(c, 401, "Invalid email or password");
   }
-  await setSession(c, user);
-  return c.json({ user: { id: user.id, email: user.email, name: user.name, role: user.role } });
+  const token = await setSession(c, user);
+  return c.json({ user: { id: user.id, email: user.email, name: user.name, role: user.role }, token });
 });
 app.post("/api/auth/logout", async (c) => {
   const token = tokenFrom(c);
