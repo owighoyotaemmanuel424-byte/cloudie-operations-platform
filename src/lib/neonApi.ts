@@ -1,4 +1,5 @@
 const API_BASE_URL = (import.meta.env.VITE_NEON_API_URL as string | undefined)?.replace(/\/$/, "");
+const SAME_ORIGIN_API = import.meta.env.VITE_NEON_API_SAME_ORIGIN === "true";
 
 const TOKEN_KEY = "cloudie_api_token";
 const USER_KEY = "cloudie_api_user";
@@ -25,10 +26,16 @@ export class NeonApiError extends Error {
 }
 
 function baseUrl() {
-  if (!API_BASE_URL) {
-    throw new Error("Neon API is not configured. Set VITE_NEON_API_URL to the Cloudie API base URL.");
-  }
-  return API_BASE_URL;
+  if (API_BASE_URL) return API_BASE_URL;
+  if (SAME_ORIGIN_API) return "";
+  throw new Error("Neon API is not configured. Set VITE_NEON_API_URL or enable VITE_NEON_API_SAME_ORIGIN after configuring the same-origin API gateway.");
+}
+
+function readCsrfCookie() {
+  if (typeof document === "undefined") return null;
+  const prefix = "cloudie_csrf=";
+  const entry = document.cookie.split(";").map((value) => value.trim()).find((value) => value.startsWith(prefix));
+  return entry ? decodeURIComponent(entry.slice(prefix.length)) : null;
 }
 
 export function getNeonToken() {
@@ -63,6 +70,10 @@ async function request<T>(path: string, init: RequestInit = {}, authenticated = 
   if (init.body && !headers.has("Content-Type")) headers.set("Content-Type", "application/json");
   const token = authenticated ? getNeonToken() : null;
   if (token) headers.set("Authorization", `Bearer ${token}`);
+  if (["POST", "PUT", "PATCH", "DELETE"].includes((init.method ?? "GET").toUpperCase())) {
+    const csrfToken = readCsrfCookie();
+    if (csrfToken) headers.set("X-CSRF-Token", csrfToken);
+  }
   const response = await fetch(`${baseUrl()}${path}`, {
     ...init,
     headers,
