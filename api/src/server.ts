@@ -298,7 +298,7 @@ app.get("/api/orders", auth, async (c) => {
 // Mutations stay disabled until shipment creation and event integrity are covered by tests.
 app.get("/api/shipments", auth, async (c) => {
   const limit = parseLimit(c.req.query("limit"));
-  const status = c.req.query("status")?.trim();
+  const status = c.req.query("status")?.trim().toLowerCase();
   if (status && !["pending", "picked_up", "in_transit", "out_for_delivery", "delivered", "failed", "cancelled"].includes(status)) {
     return fail(c, 400, "Invalid shipment status");
   }
