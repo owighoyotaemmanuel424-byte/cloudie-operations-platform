@@ -1,6 +1,9 @@
 -- Cloudie Neon migration phase 5: enforce balanced, immutable posted ledger groups.
 -- Apply to a disposable/test branch first. Financial writes remain disabled in the API.
+-- New ledger groups must start as drafts; entries are added before posting.
 BEGIN;
+
+ALTER TABLE banking_ledger_groups ALTER COLUMN status SET DEFAULT 'draft';
 
 CREATE OR REPLACE FUNCTION cloudie_assert_ledger_group_balanced(p_group_id TEXT)
 RETURNS VOID
@@ -120,16 +123,24 @@ DECLARE
   v_group_id TEXT;
   v_status TEXT;
 BEGIN
-  IF TG_OP = 'DELETE' THEN
+  IF TG_OP <> 'INSERT' THEN
     v_group_id := OLD.ledger_group_id;
-  ELSE
+    SELECT status INTO v_status FROM banking_ledger_groups WHERE id = v_group_id;
+    IF v_status = 'posted' THEN
+      RAISE EXCEPTION 'Entries in posted ledger group % are immutable; post a compensating reversal instead', v_group_id
+        USING ERRCODE = '23514';
+    END IF;
+  END IF;
+
+  IF TG_OP <> 'DELETE' THEN
     v_group_id := NEW.ledger_group_id;
+    SELECT status INTO v_status FROM banking_ledger_groups WHERE id = v_group_id;
+    IF v_status = 'posted' THEN
+      RAISE EXCEPTION 'Entries in posted ledger group % are immutable; post a compensating reversal instead', v_group_id
+        USING ERRCODE = '23514';
+    END IF;
   END IF;
-  SELECT status INTO v_status FROM banking_ledger_groups WHERE id = v_group_id;
-  IF v_status = 'posted' THEN
-    RAISE EXCEPTION 'Entries in posted ledger group % are immutable; post a compensating reversal instead', v_group_id
-      USING ERRCODE = '23514';
-  END IF;
+
   IF TG_OP = 'DELETE' THEN RETURN OLD; END IF;
   RETURN NEW;
 END;
@@ -137,7 +148,7 @@ $$;
 
 DROP TRIGGER IF EXISTS banking_ledger_entries_immutable_posted ON banking_ledger_entries;
 CREATE TRIGGER banking_ledger_entries_immutable_posted
-BEFORE UPDATE OR DELETE ON banking_ledger_entries
+BEFORE INSERT OR UPDATE OR DELETE ON banking_ledger_entries
 FOR EACH ROW EXECUTE FUNCTION cloudie_prevent_posted_ledger_entry_mutation();
 
 CREATE OR REPLACE FUNCTION cloudie_prevent_posted_ledger_group_mutation()
