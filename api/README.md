@@ -11,21 +11,13 @@ This is a separate Node.js API service for a gradual Convex-to-Neon migration. I
 
 ## API routes
 
-- Health: `GET /health` and `GET /api/health`. The health check verifies PostgreSQL connectivity and the presence of the required core tables (`app_users`, `api_sessions`, `tenant_sites`, `tenant_users`, `wallet_ledger`, `catalog_products`, `commerce_orders`, and `user_notifications`). It returns HTTP 503 when the database is unavailable or the required schema is incomplete; `database: connected` does not identify the database provider.
+- Health: `GET /health` and `GET /api/health`.
 - Authentication: `GET /api/auth/csrf`, `POST /api/auth/register`, `POST /api/auth/login`, `POST /api/auth/logout`.
 - Session and customer reads: `GET /api/me`, `GET /api/profile`, `GET /api/tenants`, `GET /api/notifications`, `GET /api/orders`, `GET /api/catalog`.
 - Admin read: `GET /api/admin/users` (administrator only).
 - Wallet history: `GET /api/wallet/ledger` (the signed-in user's own entries only).
 
 The notifications, orders, and catalog list endpoints accept a bounded `limit` query parameter (maximum 100). `GET /api/tenants` uses its fixed server-side limit. Catalog tenant filtering requires the current user to own or belong to that tenant, unless the user is an administrator.
-
-## Deployment and staged same-origin gateway
-
-The Vercel configuration now proxies `/api/*` and `/health` to the explicitly named staging API origin. The Render Blueprint allows the verified Vercel production hostname and the existing `cloudie.wuaze.com` hostname as request origins. The frontend flags remain disabled by default; adding gateway routes does not itself switch the customer UI to Neon.
-
-For a controlled staging verification, set the frontend build variables `VITE_NEON_API_SAME_ORIGIN=true` and `VITE_NEON_COOKIE_ONLY=true`, and set the API runtime variable `COOKIE_ONLY_SESSIONS=true`. Configure these in a staging/preview environment first. The API flag suppresses the JWT in login/register JSON; the frontend flag stops reading or sending any legacy sessionStorage bearer token. Do not enable these flags in production until registration, login, refresh/reload, protected reads, CSRF-protected writes, logout, session revocation, and fallback/rollback have been verified against the deployed gateway. The API remains backward compatible when `COOKIE_ONLY_SESSIONS` is unset or false.
-
-The proxy target in `vercel.json` is the staging service, not a production API. Do not repoint production customer traffic to it or treat it as a production backend. Before a production migration, replace the staging target with the independently verified production API origin and verify the deployed commit and database identity.
 
 ## Deployment
 A Render Blueprint is provided in the repository root at `render.yaml`. Review it before deployment, then set `DATABASE_URL` to the Neon **test** branch first and verify the health endpoint. Set `CORS_ORIGINS` to the exact frontend origin. Never expose database credentials or JWT secrets as `VITE_*` variables.
@@ -39,3 +31,7 @@ A Render Blueprint is provided in the repository root at `render.yaml`. Review i
 - Admin creation must be a controlled operator action; never add admin assignment to public registration.
 - Financial write endpoints are intentionally absent. Migration 005 enforces deferred per-currency balance, entry-to-group currency matching, tenant matching, and posted-ledger immutability. Do not enable live money movement until ledger balancing, concurrency, idempotency, reconciliation, and authorization tests pass.
 - Production launch requires dependency installation/build, smoke tests against the staging service, security review, and staged data migration. Repository changes alone do not mean the API has been deployed or that the customer UI has been migrated.
+
+## Same-origin cookie-only rollout
+
+The Vercel gateway routes `/api/*` and `/health` to the explicitly configured staging Render API. Cookie-only mode is opt-in via `COOKIE_ONLY_SESSIONS=true` on the API and `VITE_NEON_COOKIE_ONLY=true` with `VITE_NEON_API_SAME_ORIGIN=true` on the frontend. The API omits bearer tokens from login/register JSON only when cookie-only mode is enabled. Do not enable these flags on production traffic until the live database identity/schema and end-to-end login, logout, CSRF, and protected-route behavior have been verified. Schema readiness checks return HTTP 503 when required tables are missing.
