@@ -103,6 +103,9 @@ async function request<T>(path: string, init: RequestInit = {}, authenticated = 
 }
 
 export const neonApi = {
+  async publicConfig() {
+    return request<{ config: { platformName: string; tagline: string; supportEmail: string; supportUrl: string; logoUrl: string; maintenanceMode: boolean }; source: string }>("/api/public-config", {}, false);
+  },
   async register(input: { name: string; email: string; password: string }) {
     const result = await request<NeonSession>("/api/auth/register", { method: "POST", body: JSON.stringify(input) }, false);
     saveSession(result);
