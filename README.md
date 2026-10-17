@@ -111,3 +111,10 @@ This repository change does not itself upload files or prove the production buil
 The current production application still uses Convex; Neon is provisioned but has not replaced the application backend. Do not change `VITE_CONVEX_URL` or remove Convex until the backend and data migration are complete.
 
 See [Neon migration readiness](./docs/neon-migration-readiness.md) for the verified architecture, safe migration phases, financial-integrity requirements, and InfinityFree hosting constraints.
+
+
+## Neon migration work (staging only)
+
+A separate Node API scaffold is available in [`api/`](./api/), with a Render Blueprint at [`render.yaml`](./render.yaml). The schema and current migration status are documented in [`migrations/STATUS.md`](./migrations/STATUS.md).
+
+**Current production backend remains Convex.** The API scaffold is not yet connected to the frontend, and user credentials/data have not been migrated. The Neon schema was smoke-checked on a separate test branch only. Do not change the production frontend URL or deploy financial write operations until authentication parity, authorization, financial invariants, import reconciliation, and integration tests have been completed.
