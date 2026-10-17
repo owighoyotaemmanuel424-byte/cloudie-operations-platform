@@ -17,7 +17,7 @@ This is a separate Node.js API service for a gradual Convex-to-Neon migration. I
 - Admin read: `GET /api/admin/users` (administrator only).
 - Wallet history: `GET /api/wallet/ledger` (the signed-in user's own entries only).
 
-List endpoints accept a bounded `limit` query parameter (maximum 100). Catalog tenant filtering requires the current user to own or belong to that tenant, unless the user is an administrator.
+The notifications, orders, and catalog list endpoints accept a bounded `limit` query parameter (maximum 100). `GET /api/tenants` uses its fixed server-side limit. Catalog tenant filtering requires the current user to own or belong to that tenant, unless the user is an administrator.
 
 ## Deployment
 A Render Blueprint is provided in the repository root at `render.yaml`. Review it before deployment, then set `DATABASE_URL` to the Neon **test** branch first and verify the health endpoint. Set `CORS_ORIGINS` to the exact frontend origin. Never expose database credentials or JWT secrets as `VITE_*` variables.
