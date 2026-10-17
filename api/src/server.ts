@@ -40,25 +40,17 @@ const configuredOrigins = Array.from(new Set([...defaultOrigins, ...envOrigins])
 
 function isAllowedOrigin(origin: string | undefined): boolean {
   if (!origin) return false;
-  if (configuredOrigins.includes(origin)) return true;
-  try {
-    const url = new URL(origin);
-    const host = url.hostname.toLowerCase();
-    if (
-      host.endsWith(".run.app") ||
-      host.endsWith(".googleusercontent.com") ||
-      host.endsWith(".duckdns.org") ||
-      host.endsWith(".wuaze.com") ||
-      host.endsWith(".onrender.com") ||
-      host === "localhost" ||
-      host === "127.0.0.1"
-    ) {
-      return true;
+  const isLoopback = (value: string) => {
+    try {
+      const url = new URL(value);
+      return url.hostname === "localhost" || url.hostname === "127.0.0.1" || url.hostname === "::1";
+    } catch {
+      return false;
     }
-  } catch {
-    return false;
-  }
-  return false;
+  };
+  if (process.env.NODE_ENV !== "production" && isLoopback(origin)) return true;
+  if (process.env.NODE_ENV === "production" && isLoopback(origin)) return false;
+  return configuredOrigins.includes(origin);
 }
 
 app.use("*", cors({
@@ -656,9 +648,21 @@ app.get("/api/tracking/:trackingNumber", async (c) => {
    CATALOG & COMMERCE ORDERS
    ════════════════════════════════════════════════════════════════════ */
 
-app.get("/api/catalog", async (c) => {
+app.get("/api/catalog", auth, async (c) => {
   const limit = parseLimit(c.req.query("limit"));
   const tenantId = c.req.query("tenantId")?.trim();
+  const user = c.get("user");
+  if (tenantId && tenantId.length > 128) return fail(c, 400, "Invalid tenant identifier");
+  if (tenantId && user.role !== "admin") {
+    const access = await pool.query(
+      `SELECT 1 FROM tenant_sites s
+       WHERE s.id=$1 AND (s.owner_user_id=$2 OR EXISTS (
+         SELECT 1 FROM tenant_users tu WHERE tu.tenant_id=s.id AND tu.user_id=$2
+       )) LIMIT 1`,
+      [tenantId, user.id],
+    );
+    if (!access.rows.length) return fail(c, 403, "Tenant access denied");
+  }
   const result = tenantId
     ? await pool.query(
       "SELECT id,tenant_id,sku,name,description,category,price_minor,currency,metadata,updated_at FROM catalog_products WHERE is_active=TRUE AND (tenant_id IS NULL OR tenant_id=$1) ORDER BY category,name LIMIT $2",
@@ -679,6 +683,8 @@ const createOrderSchema = z.object({
   currency: z.string().length(3).default("NGN"),
 });
 
+class OrderValidationError extends Error {}
+
 app.post("/api/orders", auth, async (c) => {
   const parsed = await readJson(c, createOrderSchema);
   if ("error" in parsed) return fail(c, 400, "Invalid order request");
@@ -692,11 +698,14 @@ app.post("/api/orders", auth, async (c) => {
 
     for (const item of parsed.data.items) {
       const prodRes = await client.query(
-        "SELECT id, name, price_minor FROM catalog_products WHERE id=$1 AND is_active=TRUE",
+        "SELECT id, name, price_minor, currency FROM catalog_products WHERE id=$1 AND is_active=TRUE",
         [item.productId],
       );
-      if (!prodRes.rows[0]) throw new Error(`Product not found or inactive: ${item.productId}`);
+      if (!prodRes.rows[0]) throw new OrderValidationError("Product not found or inactive");
       const prod = prodRes.rows[0];
+      if (String(prod.currency).toUpperCase() !== parsed.data.currency.toUpperCase()) {
+        throw new OrderValidationError("All products must use the requested order currency");
+      }
       const lineTotal = Number(prod.price_minor) * item.quantity;
       subtotal += lineTotal;
       resolvedItems.push({ id: prod.id, name: prod.name, price_minor: Number(prod.price_minor), quantity: item.quantity });
@@ -723,7 +732,9 @@ app.post("/api/orders", auth, async (c) => {
     return c.json({ order: orderRes.rows[0], items: resolvedItems }, 201);
   } catch (error) {
     await client.query("ROLLBACK").catch(() => undefined);
-    return fail(c, 400, error instanceof Error ? error.message : "Failed to place order");
+    if (error instanceof OrderValidationError) return fail(c, 400, error.message);
+    console.error("Order creation failed", error instanceof Error ? error.message : "unknown");
+    return fail(c, 500, "Unable to place order");
   } finally {
     client.release();
   }
