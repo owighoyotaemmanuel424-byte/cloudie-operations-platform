@@ -172,8 +172,40 @@ app.get("/api/auth/csrf", (c) => {
 
 app.get("/health", async (c) => {
   try {
-    const result = await pool.query("SELECT 1 AS ok");
-    return c.json({ ok: result.rows[0]?.ok === 1, service: "cloudie-neon-api", database: "connected", timestamp: new Date().toISOString() });
+    const requiredTables = [
+      "app_users", "api_sessions", "tenant_sites", "tenant_users",
+      "wallet_ledger", "catalog_products", "commerce_orders", "user_notifications",
+    ];
+    const result = await pool.query<{ ok: number; missing_tables: string[] }>(
+      `WITH required(table_name) AS (SELECT unnest($1::text[]))
+       SELECT 1 AS ok,
+         COALESCE(
+           array_agg(required.table_name) FILTER (WHERE actual.table_name IS NULL),
+           ARRAY[]::text[]
+         ) AS missing_tables
+       FROM required
+       LEFT JOIN information_schema.tables actual
+         ON actual.table_schema='public' AND actual.table_name=required.table_name`,
+      [requiredTables],
+    );
+    const timestamp = new Date().toISOString();
+    if (result.rows[0]?.missing_tables?.length) {
+      return c.json({
+        ok: false,
+        service: "cloudie-neon-api",
+        database: "connected",
+        schema: "incomplete",
+        missingTables: result.rows[0].missing_tables,
+        timestamp,
+      }, 503);
+    }
+    return c.json({
+      ok: result.rows[0]?.ok === 1,
+      service: "cloudie-neon-api",
+      database: "connected",
+      schema: "ready",
+      timestamp,
+    });
   } catch {
     return c.json({ ok: false, service: "cloudie-neon-api", database: "unavailable" }, 503);
   }
@@ -210,7 +242,7 @@ app.post("/api/auth/register", async (c) => {
       path: "/", maxAge: 8 * 60 * 60,
     });
     setCsrfCookie(c);
-    return c.json({ user: { id: user.id, email: user.email, name: user.name, role: user.role }, token }, 201);
+    return c.json({ user: { id: user.id, email: user.email, name: user.name, role: user.role }, ...(process.env.COOKIE_ONLY_SESSIONS === "true" ? {} : { token }) }, 201);
   } catch (error) {
     await client.query("ROLLBACK").catch(() => undefined);
     if (typeof error === "object" && error !== null && "code" in error && error.code === "23505") return fail(c, 409, "An account with this email already exists");
@@ -235,7 +267,7 @@ app.post("/api/auth/login", async (c) => {
   }
   const token = await setSession(c, user);
   setCsrfCookie(c);
-  return c.json({ user: { id: user.id, email: user.email, name: user.name, role: user.role }, token });
+  return c.json({ user: { id: user.id, email: user.email, name: user.name, role: user.role }, ...(process.env.COOKIE_ONLY_SESSIONS === "true" ? {} : { token }) });
 });
 app.post("/api/auth/logout", async (c) => {
   const token = tokenFrom(c);

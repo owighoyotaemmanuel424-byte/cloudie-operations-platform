@@ -6,6 +6,14 @@
   "outputDirectory": "dist",
   "rewrites": [
     {
+      "source": "/api/:path*",
+      "destination": "https://cloudie-operations-api-stage.onrender.com/api/:path*"
+    },
+    {
+      "source": "/health",
+      "destination": "https://cloudie-operations-api-stage.onrender.com/health"
+    },
+    {
       "source": "/(.*)",
       "destination": "/index.html"
     }

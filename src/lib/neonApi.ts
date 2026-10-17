@@ -1,8 +1,11 @@
 const API_BASE_URL = (import.meta.env.VITE_NEON_API_URL as string | undefined)?.replace(/\/$/, "");
 const SAME_ORIGIN_API = import.meta.env.VITE_NEON_API_SAME_ORIGIN === "true";
+const COOKIE_ONLY_SESSIONS = import.meta.env.VITE_NEON_COOKIE_ONLY === "true";
 
 const TOKEN_KEY = "cloudie_api_token";
 const USER_KEY = "cloudie_api_user";
+// Truthy marker lets existing auth bootstrap call /api/me while the browser sends its HttpOnly cookie.
+const COOKIE_SESSION_MARKER = "__cloudie_cookie_session__";
 
 export type NeonUser = {
   id: string;
@@ -26,8 +29,9 @@ export class NeonApiError extends Error {
 }
 
 function baseUrl() {
-  if (API_BASE_URL) return API_BASE_URL;
+  // Explicit same-origin mode must override a configured direct API URL, otherwise the gateway is bypassed.
   if (SAME_ORIGIN_API) return "";
+  if (API_BASE_URL) return API_BASE_URL;
   throw new Error("Neon API is not configured. Set VITE_NEON_API_URL or enable VITE_NEON_API_SAME_ORIGIN after configuring the same-origin API gateway.");
 }
 
@@ -39,6 +43,7 @@ function readCsrfCookie() {
 }
 
 export function getNeonToken() {
+  if (COOKIE_ONLY_SESSIONS) return COOKIE_SESSION_MARKER;
   try { return window.sessionStorage.getItem(TOKEN_KEY); } catch { return null; }
 }
 
@@ -51,7 +56,8 @@ export function getCachedNeonUser(): NeonUser | null {
 
 function saveSession(session: NeonSession) {
   try {
-    if (session.token) window.sessionStorage.setItem(TOKEN_KEY, session.token);
+    if (session.token && !COOKIE_ONLY_SESSIONS) window.sessionStorage.setItem(TOKEN_KEY, session.token);
+    else window.sessionStorage.removeItem(TOKEN_KEY);
     window.sessionStorage.setItem(USER_KEY, JSON.stringify(session.user));
   } catch {
     throw new Error("Your browser blocked session storage. Enable site storage and try again.");
@@ -69,7 +75,7 @@ async function request<T>(path: string, init: RequestInit = {}, authenticated = 
   const headers = new Headers(init.headers);
   if (init.body && !headers.has("Content-Type")) headers.set("Content-Type", "application/json");
   const token = authenticated ? getNeonToken() : null;
-  if (token) headers.set("Authorization", `Bearer ${token}`);
+  if (token && token !== COOKIE_SESSION_MARKER) headers.set("Authorization", `Bearer ${token}`);
   if (["POST", "PUT", "PATCH", "DELETE"].includes((init.method ?? "GET").toUpperCase())) {
     const csrfToken = readCsrfCookie();
     if (csrfToken) headers.set("X-CSRF-Token", csrfToken);

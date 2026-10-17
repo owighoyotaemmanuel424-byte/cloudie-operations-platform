@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { SignJWT } from "jose";
+import { scryptSync } from "node:crypto";
 
 // Configure before importing server.ts: this keeps the app unbound to a port and
 // prevents these middleware tests from requiring a reachable PostgreSQL instance.
@@ -167,6 +168,43 @@ test("rejects malformed registration and login payloads before database access",
   assert.equal(login.status, 400);
 });
 
+test("reports database connectivity and required schema readiness separately", async () => {
+  const mutablePool = pool as unknown as { query: (...args: unknown[]) => Promise<unknown> };
+  const originalQuery = mutablePool.query;
+  mutablePool.query = async () => ({ rows: [{ ok: 1, missing_tables: [] }], rowCount: 1 });
+  try {
+    const response = await app.request("/health");
+    assert.equal(response.status, 200);
+    const body = await response.json() as {
+      ok: boolean; service: string; database: string; schema: string; timestamp: string;
+    };
+    assert.equal(body.ok, true);
+    assert.equal(body.service, "cloudie-neon-api");
+    assert.equal(body.database, "connected");
+    assert.equal(body.schema, "ready");
+    assert.match(body.timestamp, /^\d{4}-\d{2}-\d{2}T/);
+  } finally {
+    mutablePool.query = originalQuery;
+  }
+});
+
+test("reports schema-incomplete databases as unhealthy", async () => {
+  const mutablePool = pool as unknown as { query: (...args: unknown[]) => Promise<unknown> };
+  const originalQuery = mutablePool.query;
+  mutablePool.query = async () => ({ rows: [{ ok: 1, missing_tables: ["api_sessions"] }], rowCount: 1 });
+  try {
+    const response = await app.request("/health");
+    assert.equal(response.status, 503);
+    const body = await response.json() as { ok: boolean; database: string; schema: string; missingTables: string[] };
+    assert.equal(body.ok, false);
+    assert.equal(body.database, "connected");
+    assert.equal(body.schema, "incomplete");
+    assert.deepEqual(body.missingTables, ["api_sessions"]);
+  } finally {
+    mutablePool.query = originalQuery;
+  }
+});
+
 test("returns 503 when the configured PostgreSQL database is unavailable", async () => {
   const mutablePool = pool as unknown as { query: (...args: unknown[]) => Promise<unknown> };
   const originalQuery = mutablePool.query;
@@ -247,5 +285,62 @@ test("rejects revoked or expired server-side sessions", async () => {
     assert.deepEqual(await response.json(), { error: "Session expired or revoked" });
   } finally {
     mutablePool.query = originalQuery;
+  }
+});
+
+test("cookie-only login omits the JWT from JSON and sets a protected session cookie", async () => {
+  const previousCookieOnly = process.env.COOKIE_ONLY_SESSIONS;
+  const previousNodeEnv = process.env.NODE_ENV;
+  process.env.COOKIE_ONLY_SESSIONS = "true";
+  process.env.NODE_ENV = "production";
+  const salt = Buffer.alloc(16, 7);
+  const passwordHash = `scrypt:${salt.toString("hex")}:${scryptSync("correct horse battery staple", salt, 64).toString("hex")}`;
+  const mutablePool = pool as unknown as { query: (...args: unknown[]) => Promise<unknown> };
+  const originalQuery = mutablePool.query;
+  mutablePool.query = async (...args: unknown[]) => {
+    const sql = String(args[0] ?? "");
+    if (sql.includes("FROM app_users WHERE lower(email)=lower($1)")) {
+      return {
+        rows: [{
+          id: "cookie-user",
+          email: "cookie@example.com",
+          name: "Cookie User",
+          role: "user",
+          is_suspended: false,
+          is_terminated: false,
+          password_hash: passwordHash,
+        }],
+        rowCount: 1,
+      };
+    }
+    if (sql.includes("INSERT INTO api_sessions")) return { rows: [], rowCount: 1 };
+    throw new Error("Unexpected database query in cookie-only login test");
+  };
+
+  try {
+    const response = await app.request("/api/auth/login", {
+      method: "POST",
+      headers: {
+        Origin: "http://localhost:5173",
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ email: "cookie@example.com", password: "correct horse battery staple" }),
+    });
+    assert.equal(response.status, 200);
+    const body = await response.json() as { user?: { id?: string }; token?: string };
+    assert.equal(body.user?.id, "cookie-user");
+    assert.equal(body.token, undefined);
+    const setCookie = response.headers.get("set-cookie") ?? "";
+    assert.match(setCookie, /cloudie_session=/);
+    assert.match(setCookie, /HttpOnly/i);
+    assert.match(setCookie, /Secure/i);
+    assert.match(setCookie, /SameSite=Lax/i);
+    assert.match(setCookie, /cloudie_csrf=/);
+  } finally {
+    mutablePool.query = originalQuery;
+    if (previousCookieOnly === undefined) delete process.env.COOKIE_ONLY_SESSIONS;
+    else process.env.COOKIE_ONLY_SESSIONS = previousCookieOnly;
+    if (previousNodeEnv === undefined) delete process.env.NODE_ENV;
+    else process.env.NODE_ENV = previousNodeEnv;
   }
 });
