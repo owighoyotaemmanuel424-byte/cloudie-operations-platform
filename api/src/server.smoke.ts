@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { SignJWT } from "jose";
+import { scryptSync } from "node:crypto";
 
 // Configure before importing server.ts: this keeps the app unbound to a port and
 // prevents these middleware tests from requiring a reachable PostgreSQL instance.
