@@ -21,5 +21,5 @@ A Render Blueprint is provided in the repository root at `render.yaml`. Review i
 - This initial service does not yet implement email verification, password reset, distributed rate limiting, tenant-site creation, wallet mutations, banking transfers, provider webhooks, or Convex data import.
 - Existing Convex users are not automatically migrated and cannot use the new API until credential migration is designed and verified.
 - Admin creation must be a controlled operator action; never add admin assignment to public registration.
-- Financial write endpoints are intentionally absent. Do not enable live money movement until ledger balancing, concurrency, idempotency, reconciliation, and authorization tests pass.
+- Financial write endpoints are intentionally absent. Migration 005 enforces deferred per-currency balance, entry-to-group currency matching, tenant matching, and posted-ledger immutability. Do not enable live money movement until ledger balancing, concurrency, idempotency, reconciliation, and authorization tests pass.
 - Production launch requires dependency installation/build, smoke tests, security review, and staging verification. The repository changes alone do not mean the API has been deployed.
