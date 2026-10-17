@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useState } from "react";
 import { getCachedNeonUser, getNeonToken, neonApi, type NeonUser } from "@/lib/neonApi";
 
+const cookieSessionMode = import.meta.env.VITE_NEON_API_SAME_ORIGIN === "true";
+
 /**
  * Neon-backed auth state for incremental migration.
  * This is deliberately separate from use-auth until the app's Convex data
@@ -8,10 +10,10 @@ import { getCachedNeonUser, getNeonToken, neonApi, type NeonUser } from "@/lib/n
  */
 export function useNeonAuth() {
   const [user, setUser] = useState<NeonUser | null>(() => getCachedNeonUser());
-  const [isLoading, setIsLoading] = useState(() => Boolean(getNeonToken()));
+  const [isLoading, setIsLoading] = useState(() => cookieSessionMode || Boolean(getNeonToken()));
 
   const refresh = useCallback(async () => {
-    if (!getNeonToken()) {
+    if (!getNeonToken() && !cookieSessionMode) {
       setUser(null);
       setIsLoading(false);
       return null;
