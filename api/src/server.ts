@@ -64,9 +64,9 @@ function tokenFrom(c: Context) {
   if (header?.startsWith("Bearer ")) return header.slice(7);
   return getCookie(c, "cloudie_session");
 }
-async function signToken(user: User) {
+async function signToken(user: User, sessionId: string) {
   return new SignJWT({ email: user.email, role: user.role })
-    .setProtectedHeader({ alg: "HS256" }).setSubject(user.id)
+    .setProtectedHeader({ alg: "HS256" }).setSubject(user.id).setJti(sessionId)
     .setIssuedAt().setIssuer("cloudie-neon-api").setAudience("cloudie-web")
     .setExpirationTime("8h").sign(jwtSecret);
 }
@@ -75,7 +75,12 @@ const auth: MiddlewareHandler<{ Variables: Variables }> = async (c, next) => {
   if (!token) return fail(c, 401, "Authentication required");
   try {
     const { payload } = await jwtVerify(token, jwtSecret, { issuer: "cloudie-neon-api", audience: "cloudie-web" });
-    if (!payload.sub) return fail(c, 401, "Invalid session");
+    if (!payload.sub || !payload.jti) return fail(c, 401, "Invalid session");
+    const activeSession = await pool.query(
+      "SELECT id FROM api_sessions WHERE id=$1 AND user_id=$2 AND revoked_at IS NULL AND expires_at > NOW()",
+      [payload.jti, payload.sub],
+    );
+    if (activeSession.rowCount !== 1) return fail(c, 401, "Session expired or revoked");
     const result = await pool.query<User & QueryResultRow>(
       "SELECT id,email,name,role,is_suspended,is_terminated FROM app_users WHERE id=$1", [payload.sub],
     );
@@ -111,7 +116,12 @@ async function verifyPassword(password: string, encoded: string) {
   return expected.length === actual.length && timingSafeEqual(expected, actual);
 }
 async function setSession(c: Context, user: User) {
-  const token = await signToken(user);
+  const sessionId = uuid();
+  const token = await signToken(user, sessionId);
+  await pool.query(
+    "INSERT INTO api_sessions (id,user_id,expires_at) VALUES ($1,$2,NOW()+INTERVAL '8 hours')",
+    [sessionId, user.id],
+  );
   setCookie(c, "cloudie_session", token, {
     httpOnly: true, secure: process.env.NODE_ENV === "production", sameSite: "Lax",
     path: "/", maxAge: 8 * 60 * 60,
@@ -177,7 +187,16 @@ app.post("/api/auth/login", async (c) => {
   await setSession(c, user);
   return c.json({ user: { id: user.id, email: user.email, name: user.name, role: user.role } });
 });
-app.post("/api/auth/logout", (c) => {
+app.post("/api/auth/logout", async (c) => {
+  const token = tokenFrom(c);
+  if (token) {
+    try {
+      const { payload } = await jwtVerify(token, jwtSecret, { issuer: "cloudie-neon-api", audience: "cloudie-web" });
+      if (payload.jti) await pool.query("UPDATE api_sessions SET revoked_at=NOW() WHERE id=$1 AND revoked_at IS NULL", [payload.jti]);
+    } catch {
+      // Logout should still clear a malformed or expired cookie.
+    }
+  }
   deleteCookie(c, "cloudie_session", { path: "/" });
   return c.json({ ok: true });
 });
