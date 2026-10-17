@@ -15,9 +15,12 @@ export type NeonSession = { user: NeonUser; token?: string };
 type ApiErrorBody = { error?: string; message?: string; details?: unknown };
 
 export class NeonApiError extends Error {
-  constructor(message: string, readonly status: number) {
+  readonly status: number;
+
+  constructor(message: string, status: number) {
     super(message);
     this.name = "NeonApiError";
+    this.status = status;
   }
 }
 
