@@ -253,7 +253,9 @@ test("rejects revoked or expired server-side sessions", async () => {
 
 test("cookie-only login omits the JWT from JSON and sets a protected session cookie", async () => {
   const previousCookieOnly = process.env.COOKIE_ONLY_SESSIONS;
+  const previousNodeEnv = process.env.NODE_ENV;
   process.env.COOKIE_ONLY_SESSIONS = "true";
+  process.env.NODE_ENV = "production";
   const salt = Buffer.alloc(16, 7);
   const passwordHash = `scrypt:${salt.toString("hex")}:${scryptSync("correct horse battery staple", salt, 64).toString("hex")}`;
   const mutablePool = pool as unknown as { query: (...args: unknown[]) => Promise<unknown> };
@@ -294,11 +296,14 @@ test("cookie-only login omits the JWT from JSON and sets a protected session coo
     const setCookie = response.headers.get("set-cookie") ?? "";
     assert.match(setCookie, /cloudie_session=/);
     assert.match(setCookie, /HttpOnly/i);
+    assert.match(setCookie, /Secure/i);
     assert.match(setCookie, /SameSite=Lax/i);
     assert.match(setCookie, /cloudie_csrf=/);
   } finally {
     mutablePool.query = originalQuery;
     if (previousCookieOnly === undefined) delete process.env.COOKIE_ONLY_SESSIONS;
     else process.env.COOKIE_ONLY_SESSIONS = previousCookieOnly;
+    if (previousNodeEnv === undefined) delete process.env.NODE_ENV;
+    else process.env.NODE_ENV = previousNodeEnv;
   }
 });
