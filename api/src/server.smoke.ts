@@ -249,3 +249,77 @@ test("rejects revoked or expired server-side sessions", async () => {
     mutablePool.query = originalQuery;
   }
 });
+
+
+test("lists only the signed-in user's shipments by default", async () => {
+  const secret = new TextEncoder().encode(process.env.JWT_SECRET);
+  const token = await new SignJWT({ email: "user@example.com", role: "user" })
+    .setProtectedHeader({ alg: "HS256" })
+    .setSubject("test-user")
+    .setJti("shipment-session")
+    .setIssuedAt()
+    .setIssuer("cloudie-neon-api")
+    .setAudience("cloudie-web")
+    .setExpirationTime("5m")
+    .sign(secret);
+  const mutablePool = pool as unknown as { query: (...args: unknown[]) => Promise<unknown> };
+  const originalQuery = mutablePool.query;
+  let shipmentQuery: { sql: string; values: unknown[] } | undefined;
+  mutablePool.query = async (...args: unknown[]) => {
+    const sql = String(args[0] ?? "");
+    if (sql.includes("FROM api_sessions")) return { rows: [{ id: "shipment-session" }], rowCount: 1 };
+    if (sql.includes("FROM app_users")) return {
+      rows: [{ id: "test-user", email: "user@example.com", name: "Test User", role: "user", is_suspended: false, is_terminated: false }],
+      rowCount: 1,
+    };
+    if (sql.includes("FROM shipments")) {
+      shipmentQuery = { sql, values: args[1] as unknown[] };
+      return { rows: [{ id: "shipment-1", tracking_number: "CLD123" }], rowCount: 1 };
+    }
+    throw new Error("Unexpected database query in shipment test");
+  };
+  try {
+    const response = await app.request("/api/shipments?limit=20", {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    assert.equal(response.status, 200);
+    assert.equal((await response.json() as { shipments: unknown[] }).shipments.length, 1);
+    assert.match(shipmentQuery?.sql ?? "", /WHERE user_id=\$1/);
+    assert.deepEqual(shipmentQuery?.values, ["test-user", 20]);
+  } finally {
+    mutablePool.query = originalQuery;
+  }
+});
+
+test("rejects invalid shipment status filters before querying shipments", async () => {
+  const secret = new TextEncoder().encode(process.env.JWT_SECRET);
+  const token = await new SignJWT({ email: "user@example.com", role: "user" })
+    .setProtectedHeader({ alg: "HS256" })
+    .setSubject("test-user")
+    .setJti("shipment-invalid-session")
+    .setIssuedAt()
+    .setIssuer("cloudie-neon-api")
+    .setAudience("cloudie-web")
+    .setExpirationTime("5m")
+    .sign(secret);
+  const mutablePool = pool as unknown as { query: (...args: unknown[]) => Promise<unknown> };
+  const originalQuery = mutablePool.query;
+  mutablePool.query = async (...args: unknown[]) => {
+    const sql = String(args[0] ?? "");
+    if (sql.includes("FROM api_sessions")) return { rows: [{ id: "shipment-invalid-session" }], rowCount: 1 };
+    if (sql.includes("FROM app_users")) return {
+      rows: [{ id: "test-user", email: "user@example.com", name: "Test User", role: "user", is_suspended: false, is_terminated: false }],
+      rowCount: 1,
+    };
+    throw new Error("Shipment query must not run for an invalid status");
+  };
+  try {
+    const response = await app.request("/api/shipments?status=unexpected", {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    assert.equal(response.status, 400);
+    assert.deepEqual(await response.json(), { error: "Invalid shipment status" });
+  } finally {
+    mutablePool.query = originalQuery;
+  }
+});
