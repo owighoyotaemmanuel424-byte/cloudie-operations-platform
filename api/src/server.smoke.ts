@@ -323,3 +323,46 @@ test("rejects invalid shipment status filters before querying shipments", async 
     mutablePool.query = originalQuery;
   }
 });
+
+
+test("wallet summary returns only the authenticated user's balance and ledger totals", async () => {
+  const secret = new TextEncoder().encode(process.env.JWT_SECRET);
+  const token = await new SignJWT({ email: "user@example.com", role: "user" })
+    .setProtectedHeader({ alg: "HS256" })
+    .setSubject("wallet-user")
+    .setJti("wallet-summary-session")
+    .setIssuedAt()
+    .setIssuer("cloudie-neon-api")
+    .setAudience("cloudie-web")
+    .setExpirationTime("5m")
+    .sign(secret);
+  const mutablePool = pool as unknown as { query: (...args: unknown[]) => Promise<unknown> };
+  const originalQuery = mutablePool.query;
+  mutablePool.query = async (...args: unknown[]) => {
+    const sql = String(args[0] ?? "");
+    if (sql.includes("FROM api_sessions")) return { rows: [{ id: "wallet-summary-session" }], rowCount: 1 };
+    if (sql.includes("FROM app_users")) {
+      assert.deepEqual(args[1], ["wallet-user"]);
+      return { rows: [{ id: "wallet-user", email: "user@example.com", name: "Test User", role: "user", is_suspended: false, is_terminated: false, wallet_balance_ngn: "120.50" }], rowCount: 1 };
+    }
+    if (sql.includes("FROM wallet_ledger")) {
+      assert.deepEqual(args[1], ["wallet-user"]);
+      return { rows: [{ total_credits_ngn: "150.50", total_debits_ngn: "30.00", entry_count: 3 }], rowCount: 1 };
+    }
+    throw new Error("Unexpected database query in wallet summary test");
+  };
+  try {
+    const response = await app.request("/api/wallet/summary", {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    assert.equal(response.status, 200);
+    assert.deepEqual(await response.json(), {
+      balanceNgn: "120.50",
+      totalCreditsNgn: "150.50",
+      totalDebitsNgn: "30.00",
+      entryCount: 3,
+    });
+  } finally {
+    mutablePool.query = originalQuery;
+  }
+});
