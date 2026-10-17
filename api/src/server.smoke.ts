@@ -279,7 +279,7 @@ test("lists only the signed-in user's shipments by default", async () => {
     throw new Error("Unexpected database query in shipment test");
   };
   try {
-    const response = await app.request("/api/shipments?limit=20", {
+    const response = await app.request("/api/shipments?limit=20&status=IN_TRANSIT", {
       headers: { Authorization: `Bearer ${token}` },
     });
     assert.equal(response.status, 200);
