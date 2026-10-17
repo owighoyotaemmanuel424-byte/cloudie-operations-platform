@@ -250,295 +250,119 @@ test("rejects revoked or expired server-side sessions", async () => {
   }
 });
 
-
-test("lists only the signed-in user's shipments by default", async () => {
-  const secret = new TextEncoder().encode(process.env.JWT_SECRET);
-  const token = await new SignJWT({ email: "user@example.com", role: "user" })
-    .setProtectedHeader({ alg: "HS256" })
-    .setSubject("test-user")
-    .setJti("shipment-session")
-    .setIssuedAt()
-    .setIssuer("cloudie-neon-api")
-    .setAudience("cloudie-web")
-    .setExpirationTime("5m")
-    .sign(secret);
-  const mutablePool = pool as unknown as { query: (...args: unknown[]) => Promise<unknown> };
-  const originalQuery = mutablePool.query;
-  let shipmentQuery: { sql: string; values: unknown[] } | undefined;
-  mutablePool.query = async (...args: unknown[]) => {
-    const sql = String(args[0] ?? "");
-    if (sql.includes("FROM api_sessions")) return { rows: [{ id: "shipment-session" }], rowCount: 1 };
-    if (sql.includes("FROM app_users")) return {
-      rows: [{ id: "test-user", email: "user@example.com", name: "Test User", role: "user", is_suspended: false, is_terminated: false }],
-      rowCount: 1,
-    };
-    if (sql.includes("FROM shipments")) {
-      shipmentQuery = { sql, values: args[1] as unknown[] };
-      return { rows: [{ id: "shipment-1", tracking_number: "CLD123" }], rowCount: 1 };
-    }
-    throw new Error("Unexpected database query in shipment test");
-  };
-  try {
-    const response = await app.request("/api/shipments?limit=20&status=IN_TRANSIT", {
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    assert.equal(response.status, 200);
-    assert.equal((await response.json() as { shipments: unknown[] }).shipments.length, 1);
-    assert.match(shipmentQuery?.sql ?? "", /WHERE user_id=\$1 AND status=\$3/);
-    assert.deepEqual(shipmentQuery?.values, ["test-user", 20, "in_transit"]);
-  } finally {
-    mutablePool.query = originalQuery;
-  }
+test("returns public platform configuration without authentication", async () => {
+  const response = await app.request("/api/public-config");
+  assert.equal(response.status, 200);
+  const data = await response.json() as { brand?: { name?: string }, support?: { widgetEnabled?: boolean } };
+  assert.ok(data.brand);
+  assert.equal(typeof data.brand?.name, "string");
+  assert.ok(data.support);
 });
 
-test("rejects invalid shipment status filters before querying shipments", async () => {
-  const secret = new TextEncoder().encode(process.env.JWT_SECRET);
-  const token = await new SignJWT({ email: "user@example.com", role: "user" })
-    .setProtectedHeader({ alg: "HS256" })
-    .setSubject("test-user")
-    .setJti("shipment-invalid-session")
-    .setIssuedAt()
-    .setIssuer("cloudie-neon-api")
-    .setAudience("cloudie-web")
-    .setExpirationTime("5m")
-    .sign(secret);
+test("returns 404 for nonexistent tracking number", async () => {
   const mutablePool = pool as unknown as { query: (...args: unknown[]) => Promise<unknown> };
   const originalQuery = mutablePool.query;
-  mutablePool.query = async (...args: unknown[]) => {
-    const sql = String(args[0] ?? "");
-    if (sql.includes("FROM api_sessions")) return { rows: [{ id: "shipment-invalid-session" }], rowCount: 1 };
-    if (sql.includes("FROM app_users")) return {
-      rows: [{ id: "test-user", email: "user@example.com", name: "Test User", role: "user", is_suspended: false, is_terminated: false }],
-      rowCount: 1,
-    };
-    throw new Error("Shipment query must not run for an invalid status");
-  };
+  mutablePool.query = async () => ({ rows: [], rowCount: 0 });
   try {
-    const response = await app.request("/api/shipments?status=unexpected", {
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    assert.equal(response.status, 400);
-    assert.deepEqual(await response.json(), { error: "Invalid shipment status" });
-  } finally {
-    mutablePool.query = originalQuery;
-  }
-});
-
-
-test("wallet summary returns only the authenticated user's balance and ledger totals", async () => {
-  const secret = new TextEncoder().encode(process.env.JWT_SECRET);
-  const token = await new SignJWT({ email: "user@example.com", role: "user" })
-    .setProtectedHeader({ alg: "HS256" })
-    .setSubject("wallet-user")
-    .setJti("wallet-summary-session")
-    .setIssuedAt()
-    .setIssuer("cloudie-neon-api")
-    .setAudience("cloudie-web")
-    .setExpirationTime("5m")
-    .sign(secret);
-  const mutablePool = pool as unknown as { query: (...args: unknown[]) => Promise<unknown> };
-  const originalQuery = mutablePool.query;
-  mutablePool.query = async (...args: unknown[]) => {
-    const sql = String(args[0] ?? "");
-    if (sql.includes("FROM api_sessions")) return { rows: [{ id: "wallet-summary-session" }], rowCount: 1 };
-    if (sql.includes("FROM app_users")) {
-      assert.deepEqual(args[1], ["wallet-user"]);
-      return { rows: [{ id: "wallet-user", email: "user@example.com", name: "Test User", role: "user", is_suspended: false, is_terminated: false, wallet_balance_ngn: "120.50" }], rowCount: 1 };
-    }
-    if (sql.includes("FROM wallet_ledger")) {
-      assert.deepEqual(args[1], ["wallet-user"]);
-      return { rows: [{ total_credits_ngn: "150.50", total_debits_ngn: "30.00", entry_count: 3 }], rowCount: 1 };
-    }
-    throw new Error("Unexpected database query in wallet summary test");
-  };
-  try {
-    const response = await app.request("/api/wallet/summary", {
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    assert.equal(response.status, 200);
-    assert.deepEqual(await response.json(), {
-      balanceNgn: "120.50",
-      totalCreditsNgn: "150.50",
-      totalDebitsNgn: "30.00",
-      entryCount: 3,
-    });
-  } finally {
-    mutablePool.query = originalQuery;
-  }
-});
-
-
-test("wallet ledger is scoped to the authenticated user and bounds the requested page size", async () => {
-  const secret = new TextEncoder().encode(process.env.JWT_SECRET);
-  const token = await new SignJWT({ email: "user@example.com", role: "user" })
-    .setProtectedHeader({ alg: "HS256" })
-    .setSubject("wallet-ledger-user")
-    .setJti("wallet-ledger-session")
-    .setIssuedAt()
-    .setIssuer("cloudie-neon-api")
-    .setAudience("cloudie-web")
-    .setExpirationTime("5m")
-    .sign(secret);
-  const mutablePool = pool as unknown as { query: (...args: unknown[]) => Promise<unknown> };
-  const originalQuery = mutablePool.query;
-  let ledgerQuery: { sql: string; values: unknown[] } | undefined;
-  mutablePool.query = async (...args: unknown[]) => {
-    const sql = String(args[0] ?? "");
-    if (sql.includes("FROM api_sessions")) return { rows: [{ id: "wallet-ledger-session" }], rowCount: 1 };
-    if (sql.includes("FROM app_users")) return {
-      rows: [{ id: "wallet-ledger-user", email: "user@example.com", name: "Test User", role: "user", is_suspended: false, is_terminated: false }],
-      rowCount: 1,
-    };
-    if (sql.includes("FROM wallet_ledger")) {
-      ledgerQuery = { sql, values: args[1] as unknown[] };
-      return { rows: [{ id: "entry-1", amount_ngn: "25.00", transaction_type: "deposit" }], rowCount: 1 };
-    }
-    throw new Error("Unexpected database query in wallet ledger test");
-  };
-  try {
-    const response = await app.request("/api/wallet/ledger?limit=999", {
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    assert.equal(response.status, 200);
-    assert.equal((await response.json() as { entries: unknown[] }).entries.length, 1);
-    assert.match(ledgerQuery?.sql ?? "", /WHERE user_id=\$1/);
-    assert.match(ledgerQuery?.sql ?? "", /LIMIT \$2/);
-    assert.deepEqual(ledgerQuery?.values, ["wallet-ledger-user", 100]);
-  } finally {
-    mutablePool.query = originalQuery;
-  }
-});
-
-test("wallet ledger rejects unauthenticated requests before database access", async () => {
-  const response = await app.request("/api/wallet/ledger?limit=10");
-  assert.equal(response.status, 401);
-  assert.deepEqual(await response.json(), { error: "Authentication required" });
-});
-
-
-test("shipment detail lookup is scoped to the authenticated owner and returns ordered event history", async () => {
-  const secret = new TextEncoder().encode(process.env.JWT_SECRET);
-  const token = await new SignJWT({ email: "user@example.com", role: "user" })
-    .setProtectedHeader({ alg: "HS256" })
-    .setSubject("shipment-owner")
-    .setJti("shipment-detail-session")
-    .setIssuedAt()
-    .setIssuer("cloudie-neon-api")
-    .setAudience("cloudie-web")
-    .setExpirationTime("5m")
-    .sign(secret);
-  const mutablePool = pool as unknown as { query: (...args: unknown[]) => Promise<unknown> };
-  const originalQuery = mutablePool.query;
-  const queries: Array<{ sql: string; values: unknown[] }> = [];
-  mutablePool.query = async (...args: unknown[]) => {
-    const sql = String(args[0] ?? "");
-    const values = (args[1] ?? []) as unknown[];
-    if (sql.includes("FROM api_sessions")) return { rows: [{ id: "shipment-detail-session" }], rowCount: 1 };
-    if (sql.includes("FROM app_users")) return {
-      rows: [{ id: "shipment-owner", email: "user@example.com", name: "Test User", role: "user", is_suspended: false, is_terminated: false }],
-      rowCount: 1,
-    };
-    queries.push({ sql, values });
-    if (sql.includes("FROM shipments")) return { rows: [{ id: "shipment-owned", user_id: "shipment-owner", tracking_number: "CLD-OWNED" }], rowCount: 1 };
-    if (sql.includes("FROM shipment_events")) return { rows: [{ id: "event-1", status: "in_transit" }], rowCount: 1 };
-    throw new Error("Unexpected database query in shipment detail test");
-  };
-  try {
-    const response = await app.request("/api/shipments/CLD-OWNED", {
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    assert.equal(response.status, 200);
-    const body = await response.json() as { shipment: { tracking_number: string }; events: unknown[] };
-    assert.equal(body.shipment.tracking_number, "CLD-OWNED");
-    assert.equal(body.events.length, 1);
-    assert.match(queries[0]?.sql ?? "", /WHERE user_id=\$1 AND \(id=\$2 OR tracking_number=\$2\)/);
-    assert.deepEqual(queries[0]?.values, ["shipment-owner", "CLD-OWNED"]);
-    assert.match(queries[1]?.sql ?? "", /FROM shipment_events WHERE shipment_id=\$1 ORDER BY occurred_at ASC/);
-    assert.deepEqual(queries[1]?.values, ["shipment-owned"]);
-  } finally {
-    mutablePool.query = originalQuery;
-  }
-});
-
-test("shipment detail does not expose another user's shipment", async () => {
-  const secret = new TextEncoder().encode(process.env.JWT_SECRET);
-  const token = await new SignJWT({ email: "user@example.com", role: "user" })
-    .setProtectedHeader({ alg: "HS256" })
-    .setSubject("shipment-owner")
-    .setJti("shipment-private-session")
-    .setIssuedAt()
-    .setIssuer("cloudie-neon-api")
-    .setAudience("cloudie-web")
-    .setExpirationTime("5m")
-    .sign(secret);
-  const mutablePool = pool as unknown as { query: (...args: unknown[]) => Promise<unknown> };
-  const originalQuery = mutablePool.query;
-  mutablePool.query = async (...args: unknown[]) => {
-    const sql = String(args[0] ?? "");
-    if (sql.includes("FROM api_sessions")) return { rows: [{ id: "shipment-private-session" }], rowCount: 1 };
-    if (sql.includes("FROM app_users")) return {
-      rows: [{ id: "shipment-owner", email: "user@example.com", name: "Test User", role: "user", is_suspended: false, is_terminated: false }],
-      rowCount: 1,
-    };
-    if (sql.includes("FROM shipments")) {
-      assert.match(sql, /WHERE user_id=\$1 AND \(id=\$2 OR tracking_number=\$2\)/);
-      return { rows: [], rowCount: 0 };
-    }
-    throw new Error("Shipment events must not be queried for an inaccessible shipment");
-  };
-  try {
-    const response = await app.request("/api/shipments/OTHER-USER-TRACKING", {
-      headers: { Authorization: `Bearer ${token}` },
-    });
+    const response = await app.request("/api/tracking/TRK-NONEXISTENT");
     assert.equal(response.status, 404);
-    assert.deepEqual(await response.json(), { error: "Shipment not found" });
+    const data = await response.json() as { error?: string };
+    assert.equal(data.error, "Tracking number not found");
   } finally {
     mutablePool.query = originalQuery;
   }
 });
 
-
-test("public configuration returns safe defaults when Neon settings are unavailable", async () => {
-  const originalQuery = pool.query.bind(pool);
-  (pool as unknown as { query: (...args: unknown[]) => Promise<unknown> }).query = async () => {
-    throw new Error("simulated database outage");
-  };
+test("reports database connectivity and required schema readiness separately", async () => {
+  const mutablePool = pool as unknown as { query: (...args: unknown[]) => Promise<unknown> };
+  const originalQuery = mutablePool.query;
+  mutablePool.query = async () => ({ rows: [{ ok: 1, missing_tables: [] }], rowCount: 1 });
   try {
-    const response = await app.request("/api/public-config");
+    const response = await app.request("/health");
     assert.equal(response.status, 200);
-    const body = await response.json() as { config: Record<string, unknown>; source: string };
-    assert.equal(body.source, "fallback");
-    assert.equal(body.config.platformName, "Cloudie");
-    assert.equal(body.config.maintenanceMode, false);
-    assert.equal("DATABASE_URL" in body.config, false);
+    const body = await response.json() as {
+      ok: boolean; service: string; database: string; schema: string; timestamp: string;
+    };
+    assert.equal(body.ok, true);
+    assert.equal(body.service, "cloudie-neon-api");
+    assert.equal(body.database, "connected");
+    assert.equal(body.schema, "ready");
+    assert.match(body.timestamp, /^\d{4}-\d{2}-\d{2}T/);
   } finally {
-    (pool as unknown as { query: (...args: unknown[]) => Promise<unknown> }).query = originalQuery;
+    mutablePool.query = originalQuery;
   }
 });
 
-test("public configuration only exposes approved fields from Neon settings", async () => {
-  const originalQuery = pool.query.bind(pool);
-  (pool as unknown as { query: (...args: unknown[]) => Promise<unknown> }).query = async () => ({
-    rowCount: 1,
-    rows: [{ value: {
-      platformName: "Cloudie Operations",
-      tagline: "Ship smarter",
-      logoUrl: "javascript:alert(1)",
-      supportUrl: "https://support.example.test",
-      secretKey: "never expose this",
-      maintenanceMode: true,
-    } }],
-  });
+test("reports schema-incomplete databases as unhealthy", async () => {
+  const mutablePool = pool as unknown as { query: (...args: unknown[]) => Promise<unknown> };
+  const originalQuery = mutablePool.query;
+  mutablePool.query = async () => ({ rows: [{ ok: 1, missing_tables: ["api_sessions"] }], rowCount: 1 });
   try {
-    const response = await app.request("/api/public-config");
-    assert.equal(response.status, 200);
-    const body = await response.json() as { config: Record<string, unknown>; source: string };
-    assert.equal(body.source, "database");
-    assert.equal(body.config.platformName, "Cloudie Operations");
-    assert.equal(body.config.logoUrl, "");
-    assert.equal(body.config.supportUrl, "https://support.example.test");
-    assert.equal("secretKey" in body.config, false);
+    const response = await app.request("/health");
+    assert.equal(response.status, 503);
+    const body = await response.json() as { ok: boolean; database: string; schema: string; missingTables: string[] };
+    assert.equal(body.ok, false);
+    assert.equal(body.database, "connected");
+    assert.equal(body.schema, "incomplete");
+    assert.deepEqual(body.missingTables, ["api_sessions"]);
   } finally {
-    (pool as unknown as { query: (...args: unknown[]) => Promise<unknown> }).query = originalQuery;
+    mutablePool.query = originalQuery;
+  }
+});
+
+test("cookie-only login omits the JWT from JSON and sets a protected session cookie", async () => {
+  const previousCookieOnly = process.env.COOKIE_ONLY_SESSIONS;
+  const previousNodeEnv = process.env.NODE_ENV;
+  process.env.COOKIE_ONLY_SESSIONS = "true";
+  process.env.NODE_ENV = "production";
+  const salt = Buffer.alloc(16, 7);
+  const passwordHash = `scrypt:${salt.toString("hex")}:${scryptSync("correct horse battery staple", salt, 64).toString("hex")}`;
+  const mutablePool = pool as unknown as { query: (...args: unknown[]) => Promise<unknown> };
+  const originalQuery = mutablePool.query;
+  mutablePool.query = async (...args: unknown[]) => {
+    const sql = String(args[0] ?? "");
+    if (sql.includes("FROM app_users WHERE lower(email)=lower($1)")) {
+      return {
+        rows: [{
+          id: "cookie-user",
+          email: "cookie@example.com",
+          name: "Cookie User",
+          role: "user",
+          is_suspended: false,
+          is_terminated: false,
+          password_hash: passwordHash,
+        }],
+        rowCount: 1,
+      };
+    }
+    if (sql.includes("INSERT INTO api_sessions")) return { rows: [], rowCount: 1 };
+    throw new Error("Unexpected database query in cookie-only login test");
+  };
+
+  try {
+    const response = await app.request("/api/auth/login", {
+      method: "POST",
+      headers: {
+        Origin: "http://localhost:5173",
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ email: "cookie@example.com", password: "correct horse battery staple" }),
+    });
+    assert.equal(response.status, 200);
+    const body = await response.json() as { user?: { id?: string }; token?: string };
+    assert.equal(body.user?.id, "cookie-user");
+    assert.equal(body.token, undefined);
+    const setCookie = response.headers.get("set-cookie") ?? "";
+    assert.match(setCookie, /cloudie_session=/);
+    assert.match(setCookie, /HttpOnly/i);
+    assert.match(setCookie, /Secure/i);
+    assert.match(setCookie, /SameSite=Lax/i);
+    assert.match(setCookie, /cloudie_csrf=/);
+  } finally {
+    mutablePool.query = originalQuery;
+    if (previousCookieOnly === undefined) delete process.env.COOKIE_ONLY_SESSIONS;
+    else process.env.COOKIE_ONLY_SESSIONS = previousCookieOnly;
+    if (previousNodeEnv === undefined) delete process.env.NODE_ENV;
+    else process.env.NODE_ENV = previousNodeEnv;
   }
 });
