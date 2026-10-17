@@ -59,6 +59,15 @@ app.use("*", async (c, next) => {
 function fail(c: Context, status: 400 | 401 | 403 | 404 | 409 | 429 | 500, message: string) {
   return c.json({ error: message }, status);
 }
+
+// Query parameters are untrusted input. Fall back to a safe default for empty,
+// malformed, fractional, negative, or excessively large values.
+function parseLimit(raw: string | undefined, fallback = 50, maximum = 100) {
+  if (raw === undefined || raw.trim() === "") return fallback;
+  const parsed = Number(raw);
+  if (!Number.isSafeInteger(parsed) || parsed < 1) return fallback;
+  return Math.min(parsed, maximum);
+}
 function tokenFrom(c: Context) {
   const header = c.req.header("authorization");
   if (header?.startsWith("Bearer ")) return header.slice(7);
@@ -232,14 +241,14 @@ app.get("/api/tenants", auth, async (c) => {
   return c.json({ tenants: result.rows });
 });
 app.get("/api/admin/users", auth, adminOnly, async (c) => {
-  const limit = Math.min(Math.max(Number(c.req.query("limit") ?? 50), 1), 100);
+  const limit = parseLimit(c.req.query("limit"));
   const result = await pool.query(
     "SELECT id,email,name,role,is_suspended,is_terminated,created_at FROM app_users ORDER BY created_at DESC LIMIT $1", [limit],
   );
   return c.json({ users: result.rows });
 });
 app.get("/api/wallet/ledger", auth, async (c) => {
-  const limit = Math.min(Math.max(Number(c.req.query("limit") ?? 50), 1), 100);
+  const limit = parseLimit(c.req.query("limit"));
   const result = await pool.query(
     "SELECT id,amount_ngn,balance_after_ngn,description,transaction_type,reference,created_at FROM wallet_ledger WHERE user_id=$1 ORDER BY created_at DESC LIMIT $2",
     [c.get("user").id, limit],
