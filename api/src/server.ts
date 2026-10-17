@@ -15,6 +15,7 @@ const jwtSecretValue = process.env.JWT_SECRET;
 if (!databaseUrl) throw new Error("DATABASE_URL is required");
 if (!jwtSecretValue || Buffer.byteLength(jwtSecretValue) < 32) throw new Error("JWT_SECRET must be at least 32 bytes");
 const jwtSecret = new TextEncoder().encode(jwtSecretValue);
+
 export const pool = new Pool({
   connectionString: databaseUrl,
   max: Number(process.env.PG_POOL_MAX ?? 10),
@@ -22,20 +23,52 @@ export const pool = new Pool({
   connectionTimeoutMillis: 10_000,
   ssl: ["localhost", "127.0.0.1", "::1"].includes(new URL(databaseUrl).hostname) ? undefined : { rejectUnauthorized: true },
 });
-pool.on("error", (error) => console.error("Unexpected idle PostgreSQL client error", error.message));
+pool.on("error", (error: Error) => console.error("Unexpected idle PostgreSQL client error", error.message));
 
 type User = { id: string; email: string; name: string | null; role: "admin" | "user" | "vendor"; is_suspended: boolean; is_terminated: boolean };
 type Variables = { user: User };
 export const app = new Hono<{ Variables: Variables }>();
-const origins = (process.env.CORS_ORIGINS ?? "http://localhost:5173").split(",").map((x) => x.trim()).filter(Boolean);
+
+const defaultOrigins = [
+  "http://localhost:3000",
+  "http://127.0.0.1:3000",
+  "http://localhost:5173",
+  "https://cloudie.wuaze.com",
+];
+const envOrigins = (process.env.CORS_ORIGINS ?? "").split(",").map((x) => x.trim()).filter(Boolean);
+const configuredOrigins = Array.from(new Set([...defaultOrigins, ...envOrigins]));
+
+function isAllowedOrigin(origin: string | undefined): boolean {
+  if (!origin) return false;
+  if (configuredOrigins.includes(origin)) return true;
+  try {
+    const url = new URL(origin);
+    const host = url.hostname.toLowerCase();
+    if (
+      host.endsWith(".run.app") ||
+      host.endsWith(".googleusercontent.com") ||
+      host.endsWith(".duckdns.org") ||
+      host.endsWith(".wuaze.com") ||
+      host.endsWith(".onrender.com") ||
+      host === "localhost" ||
+      host === "127.0.0.1"
+    ) {
+      return true;
+    }
+  } catch {
+    return false;
+  }
+  return false;
+}
 
 app.use("*", cors({
-  origin: (origin) => origins.includes(origin) ? origin : "",
+  origin: (origin) => isAllowedOrigin(origin) ? origin : "",
   credentials: true,
   allowHeaders: ["Content-Type", "Authorization", "X-CSRF-Token"],
-  allowMethods: ["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
+  allowMethods: ["GET", "POST", "PATCH", "PUT", "DELETE", "OPTIONS"],
   maxAge: 600,
 }));
+
 // Protect cookie-authenticated state changes with origin validation and a
 // double-submit CSRF token. Bearer clients remain supported during migration.
 app.use("*", async (c, next) => {
@@ -43,7 +76,7 @@ app.use("*", async (c, next) => {
     const origin = c.req.header("origin");
     const hasCookie = Boolean(getCookie(c, "cloudie_session"));
     const usesBearer = c.req.header("authorization")?.startsWith("Bearer ") ?? false;
-    if ((origin && !origins.includes(origin)) || (hasCookie && !origin)) {
+    if ((origin && !isAllowedOrigin(origin)) || (hasCookie && !origin)) {
       return c.json({ error: "Cross-origin request rejected" }, 403);
     }
     if (hasCookie && !usesBearer) {
@@ -59,6 +92,7 @@ app.use("*", async (c, next) => {
   }
   await next();
 });
+
 app.use("*", async (c, next) => {
   await next();
   c.header("X-Content-Type-Options", "nosniff");
@@ -69,8 +103,11 @@ app.use("*", async (c, next) => {
 
 function setCsrfCookie(c: Context) {
   setCookie(c, "cloudie_csrf", randomBytes(32).toString("hex"), {
-    httpOnly: false, secure: process.env.NODE_ENV === "production", sameSite: "Lax",
-    path: "/", maxAge: 8 * 60 * 60,
+    httpOnly: false,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "Lax",
+    path: "/",
+    maxAge: 8 * 60 * 60,
   });
 }
 
@@ -78,25 +115,31 @@ function fail(c: Context, status: 400 | 401 | 403 | 404 | 409 | 429 | 500, messa
   return c.json({ error: message }, status);
 }
 
-// Query parameters are untrusted input. Fall back to a safe default for empty,
-// malformed, fractional, negative, or excessively large values.
 function parseLimit(raw: string | undefined, fallback = 50, maximum = 100) {
   if (raw === undefined || raw.trim() === "") return fallback;
   const parsed = Number(raw);
   if (!Number.isSafeInteger(parsed) || parsed < 1) return fallback;
   return Math.min(parsed, maximum);
 }
+
 function tokenFrom(c: Context) {
   const header = c.req.header("authorization");
   if (header?.startsWith("Bearer ")) return header.slice(7);
   return getCookie(c, "cloudie_session");
 }
+
 async function signToken(user: User, sessionId: string) {
   return new SignJWT({ email: user.email, role: user.role })
-    .setProtectedHeader({ alg: "HS256" }).setSubject(user.id).setJti(sessionId)
-    .setIssuedAt().setIssuer("cloudie-neon-api").setAudience("cloudie-web")
-    .setExpirationTime("8h").sign(jwtSecret);
+    .setProtectedHeader({ alg: "HS256" })
+    .setSubject(user.id)
+    .setJti(sessionId)
+    .setIssuedAt()
+    .setIssuer("cloudie-neon-api")
+    .setAudience("cloudie-web")
+    .setExpirationTime("8h")
+    .sign(jwtSecret);
 }
+
 const auth: MiddlewareHandler<{ Variables: Variables }> = async (c, next) => {
   const token = tokenFrom(c);
   if (!token) return fail(c, 401, "Authentication required");
@@ -123,22 +166,26 @@ const auth: MiddlewareHandler<{ Variables: Variables }> = async (c, next) => {
   c.set("user", user);
   await next();
 };
+
 const adminOnly: MiddlewareHandler<{ Variables: Variables }> = async (c, next) => {
   if (c.get("user").role !== "admin") return fail(c, 403, "Administrator access required");
   await next();
 };
+
 const registerSchema = z.object({
   name: z.string().trim().min(1).max(100),
-  email: z.email().max(254),
+  email: z.string().email().max(254),
   password: z.string().min(12).max(128),
 });
-const loginSchema = z.object({ email: z.email().max(254), password: z.string().min(1).max(128) });
+const loginSchema = z.object({ email: z.string().email().max(254), password: z.string().min(1).max(128) });
 const uuid = () => randomBytes(16).toString("hex");
+
 async function hashPassword(password: string) {
   const salt = randomBytes(16);
   const derived = await scrypt(password, salt, 64) as Buffer;
   return `scrypt:${salt.toString("hex")}:${derived.toString("hex")}`;
 }
+
 async function verifyPassword(password: string, encoded: string) {
   const [scheme, saltHex, hashHex] = encoded.split(":");
   if (scheme !== "scrypt" || !saltHex || !hashHex) return false;
@@ -146,6 +193,7 @@ async function verifyPassword(password: string, encoded: string) {
   const actual = await scrypt(password, Buffer.from(saltHex, "hex"), expected.length) as Buffer;
   return expected.length === actual.length && timingSafeEqual(expected, actual);
 }
+
 async function setSession(c: Context, user: User) {
   const sessionId = uuid();
   const token = await signToken(user, sessionId);
@@ -154,73 +202,116 @@ async function setSession(c: Context, user: User) {
     [sessionId, user.id],
   );
   setCookie(c, "cloudie_session", token, {
-    httpOnly: true, secure: process.env.NODE_ENV === "production", sameSite: "Lax",
-    path: "/", maxAge: 8 * 60 * 60,
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "Lax",
+    path: "/",
+    maxAge: 8 * 60 * 60,
   });
   return token;
 }
+
 async function readJson<T>(c: Context, schema: z.ZodType<T>) {
   const raw = await c.req.json().catch(() => null);
   const parsed = schema.safeParse(raw);
   return parsed.success ? { data: parsed.data } : { error: parsed.error.flatten() };
 }
 
-app.get("/api/auth/csrf", (c) => {
-  setCsrfCookie(c);
-  return c.json({ ok: true });
-});
+/* ════════════════════════════════════════════════════════════════════
+   PUBLIC & HEALTH ENDPOINTS
+   ════════════════════════════════════════════════════════════════════ */
 
 app.get("/health", async (c) => {
   try {
-    const result = await pool.query("SELECT 1 AS ok");
-    return c.json({ ok: result.rows[0]?.ok === 1, service: "cloudie-neon-api", database: "connected", timestamp: new Date().toISOString() });
+    const requiredTables = [
+      "app_users", "api_sessions", "tenant_sites", "tenant_users",
+      "wallet_ledger", "catalog_products", "commerce_orders", "user_notifications",
+    ];
+    const result = await pool.query<{ ok: number; missing_tables: string[] }>(
+      `WITH required(table_name) AS (SELECT unnest($1::text[]))
+       SELECT 1 AS ok,
+         COALESCE(
+           array_agg(required.table_name) FILTER (WHERE actual.table_name IS NULL),
+           ARRAY[]::text[]
+         ) AS missing_tables
+       FROM required
+       LEFT JOIN information_schema.tables actual
+         ON actual.table_schema='public' AND actual.table_name=required.table_name`,
+      [requiredTables],
+    );
+    const timestamp = new Date().toISOString();
+    if (result.rows[0]?.missing_tables?.length) {
+      return c.json({
+        ok: false,
+        service: "cloudie-neon-api",
+        database: "connected",
+        schema: "incomplete",
+        missingTables: result.rows[0].missing_tables,
+        timestamp,
+      }, 503);
+    }
+    return c.json({
+      ok: result.rows[0]?.ok === 1,
+      service: "cloudie-neon-api",
+      database: "connected",
+      schema: "ready",
+      timestamp,
+    });
   } catch {
     return c.json({ ok: false, service: "cloudie-neon-api", database: "unavailable" }, 503);
   }
 });
 app.get("/api/health", (c) => c.redirect("/health", 307));
 
-// Public, non-secret platform configuration. Never return provider keys, internal
-// infrastructure details, or admin-only settings from this endpoint.
-const publicConfigDefaults = {
-  platformName: "Cloudie",
-  tagline: "Operations, commerce and logistics in one place",
-  supportEmail: "",
-  supportUrl: "",
-  logoUrl: "",
-  maintenanceMode: false,
-};
+app.get("/api/auth/csrf", (c) => {
+  setCsrfCookie(c);
+  return c.json({ ok: true });
+});
+
 app.get("/api/public-config", async (c) => {
+  const defaultBrand = {
+    name: "Cloudie Operations",
+    tagline: "Unified operations platform",
+    accentColor: "#10b981",
+    footerNote: "Shipments, tracking, documents, and payments drawn on one balance."
+  };
+  const defaultSupport = {
+    email: "support@cloudie.wuaze.com",
+    phone: "+234 800 256 8343",
+    hours: "Mon-Fri 08:00 - 18:00 WAT",
+    widgetEnabled: true,
+    widgetTitle: "Need help?",
+    widgetMessage: "Our support desk replies within one business day.",
+    faqs: [
+      { question: "What is Cloudie Operations?", answer: "A unified platform connecting shipments, tracking, documents, and business tools." },
+      { question: "How does tracking work?", answer: "Enter any active tracking number on the public tracking page for live milestones." }
+    ]
+  };
+
   try {
-    const result = await pool.query<{ value: unknown }>(
-      "SELECT value FROM platform_settings WHERE key = $1 LIMIT 1",
-      ["public_config"],
-    );
-    const stored = result.rows[0]?.value;
-    const config = stored && typeof stored === "object" && !Array.isArray(stored)
-      ? stored as Record<string, unknown>
-      : {};
-    const safe = {
-      platformName: typeof config.platformName === "string" ? config.platformName.slice(0, 80) : publicConfigDefaults.platformName,
-      tagline: typeof config.tagline === "string" ? config.tagline.slice(0, 180) : publicConfigDefaults.tagline,
-      supportEmail: typeof config.supportEmail === "string" ? config.supportEmail.slice(0, 254) : "",
-      supportUrl: typeof config.supportUrl === "string" && /^https?:\/\//i.test(config.supportUrl) ? config.supportUrl.slice(0, 500) : "",
-      logoUrl: typeof config.logoUrl === "string" && (/^https?:\/\//i.test(config.logoUrl) || config.logoUrl.startsWith("/")) ? config.logoUrl.slice(0, 500) : "",
-      maintenanceMode: config.maintenanceMode === true,
-    };
-    return c.json({ config: safe, source: result.rowCount ? "database" : "defaults" });
-  } catch (error) {
-    console.error("Public config query failed", error instanceof Error ? error.message : "unknown");
-    // Keep the public landing shell available during a settings-table outage.
-    return c.json({ config: publicConfigDefaults, source: "fallback" });
+    const brandRow = await pool.query("SELECT value FROM platform_settings WHERE key='brand_config'");
+    const supportRow = await pool.query("SELECT value FROM platform_settings WHERE key='support_config'");
+    const quickActionsRow = await pool.query("SELECT value FROM platform_settings WHERE key='mobile_quick_actions'");
+    return c.json({
+      brand: brandRow.rows[0]?.value ?? defaultBrand,
+      support: supportRow.rows[0]?.value ?? defaultSupport,
+      quickActions: quickActionsRow.rows[0]?.value ?? [],
+      hasCustomBrand: Boolean(brandRow.rows[0]),
+    });
+  } catch {
+    return c.json({
+      brand: defaultBrand,
+      support: defaultSupport,
+      quickActions: [],
+      hasCustomBrand: false,
+    });
   }
 });
 
+/* ════════════════════════════════════════════════════════════════════
+   AUTHENTICATION ENDPOINTS
+   ════════════════════════════════════════════════════════════════════ */
 
-/**
- * Registration creates ordinary users only. It deliberately does not accept a role,
- * tenant, wallet balance, or admin flag from the client.
- */
 app.post("/api/auth/register", async (c) => {
   const parsed = await readJson(c, registerSchema);
   if ("error" in parsed) return c.json({ error: "Invalid registration details", details: parsed.error }, 400);
@@ -243,17 +334,22 @@ app.post("/api/auth/register", async (c) => {
     );
     await client.query("COMMIT");
     setCookie(c, "cloudie_session", token, {
-      httpOnly: true, secure: process.env.NODE_ENV === "production", sameSite: "Lax",
-      path: "/", maxAge: 8 * 60 * 60,
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "Lax",
+      path: "/",
+      maxAge: 8 * 60 * 60,
     });
     setCsrfCookie(c);
-    return c.json({ user: { id: user.id, email: user.email, name: user.name, role: user.role }, token }, 201);
+    return c.json({ user: { id: user.id, email: user.email, name: user.name, role: user.role }, ...(process.env.COOKIE_ONLY_SESSIONS === "true" ? {} : { token }) }, 201);
   } catch (error) {
     await client.query("ROLLBACK").catch(() => undefined);
     if (typeof error === "object" && error !== null && "code" in error && error.code === "23505") return fail(c, 409, "An account with this email already exists");
     console.error("Registration failed", error instanceof Error ? error.message : "unknown");
     return fail(c, 500, "Unable to create account");
-  } finally { client.release(); }
+  } finally {
+    client.release();
+  }
 });
 
 app.post("/api/auth/login", async (c) => {
@@ -264,7 +360,6 @@ app.post("/api/auth/login", async (c) => {
     "SELECT id,email,name,role,is_suspended,is_terminated,password_hash FROM app_users WHERE lower(email)=lower($1)", [email],
   );
   const user = result.rows[0];
-  // Always pay the scrypt cost, even for missing accounts, malformed hashes, or disabled accounts.
   const dummyHash = "scrypt:" + "00".repeat(16) + ":" + "00".repeat(64);
   const passwordValid = await verifyPassword(parsed.data.password, user?.password_hash ?? dummyHash).catch(() => false);
   if (!user || !user.password_hash || !passwordValid || user.is_suspended || user.is_terminated) {
@@ -272,8 +367,9 @@ app.post("/api/auth/login", async (c) => {
   }
   const token = await setSession(c, user);
   setCsrfCookie(c);
-  return c.json({ user: { id: user.id, email: user.email, name: user.name, role: user.role }, token });
+  return c.json({ user: { id: user.id, email: user.email, name: user.name, role: user.role }, ...(process.env.COOKIE_ONLY_SESSIONS === "true" ? {} : { token }) });
 });
+
 app.post("/api/auth/logout", async (c) => {
   const token = tokenFrom(c);
   if (token) {
@@ -281,107 +377,288 @@ app.post("/api/auth/logout", async (c) => {
       const { payload } = await jwtVerify(token, jwtSecret, { issuer: "cloudie-neon-api", audience: "cloudie-web" });
       if (payload.jti) await pool.query("UPDATE api_sessions SET revoked_at=NOW() WHERE id=$1 AND revoked_at IS NULL", [payload.jti]);
     } catch {
-      // Logout should still clear a malformed or expired cookie.
+      // Ignored
     }
   }
   deleteCookie(c, "cloudie_session", { path: "/" });
   deleteCookie(c, "cloudie_csrf", { path: "/" });
   return c.json({ ok: true });
 });
+
 app.get("/api/me", auth, (c) => {
   const user = c.get("user");
   return c.json({ user: { id: user.id, email: user.email, name: user.name, role: user.role } });
 });
-app.get("/api/tenants", auth, async (c) => {
-  const user = c.get("user");
-  const result = user.role === "admin"
-    ? await pool.query("SELECT id,site_name,display_name,subdomain,site_type,currency,country,is_active,created_at FROM tenant_sites ORDER BY created_at DESC LIMIT 200")
-    : await pool.query(
-      `SELECT s.id,s.site_name,s.display_name,s.subdomain,s.site_type,s.currency,s.country,s.is_active,s.created_at
-       FROM tenant_sites s LEFT JOIN tenant_users tu ON tu.tenant_id=s.id
-       WHERE s.owner_user_id=$1 OR tu.user_id=$1 ORDER BY s.created_at DESC LIMIT 200`, [user.id],
-    );
-  return c.json({ tenants: result.rows });
-});
+
+/* ════════════════════════════════════════════════════════════════════
+   USER PROFILE & SETTINGS
+   ════════════════════════════════════════════════════════════════════ */
+
 app.get("/api/profile", auth, async (c) => {
   const user = c.get("user");
   const result = await pool.query(
-    "SELECT id,name,email,role,image,email_verified_at,organization_name,created_at,updated_at FROM app_users WHERE id=$1",
+    "SELECT id,name,email,role,image,email_verified_at,organization_name,wallet_balance_ngn,points_balance,created_at,updated_at FROM app_users WHERE id=$1",
     [user.id],
   );
   if (!result.rows[0]) return fail(c, 404, "Profile not found");
   return c.json({ profile: result.rows[0] });
 });
 
-app.get("/api/notifications", auth, async (c) => {
-  const limit = parseLimit(c.req.query("limit"));
-  const result = await pool.query(
-    "SELECT id,tenant_id,category,title,body,read_at,action_url,created_at FROM user_notifications WHERE user_id=$1 ORDER BY created_at DESC LIMIT $2",
-    [c.get("user").id, limit],
-  );
-  return c.json({ notifications: result.rows });
+const updateProfileSchema = z.object({
+  name: z.string().trim().min(1).max(100).optional(),
+  organization_name: z.string().trim().max(100).optional(),
 });
 
-app.get("/api/orders", auth, async (c) => {
-  const limit = parseLimit(c.req.query("limit"));
-  const result = await pool.query(
-    "SELECT id,tenant_id,status,currency,subtotal_minor,fee_minor,total_minor,created_at,updated_at FROM commerce_orders WHERE user_id=$1 ORDER BY created_at DESC LIMIT $2",
-    [c.get("user").id, limit],
-  );
-  return c.json({ orders: result.rows });
+app.patch("/api/profile", auth, async (c) => {
+  const parsed = await readJson(c, updateProfileSchema);
+  if ("error" in parsed) return fail(c, 400, "Invalid profile payload");
+  const updates: string[] = [];
+  const values: unknown[] = [];
+  let idx = 1;
+  if (parsed.data.name !== undefined) {
+    updates.push(`name=$${idx++}`);
+    values.push(parsed.data.name);
+  }
+  if (parsed.data.organization_name !== undefined) {
+    updates.push(`organization_name=$${idx++}`);
+    values.push(parsed.data.organization_name);
+  }
+  if (updates.length === 0) return c.json({ ok: true });
+  updates.push(`updated_at=NOW()`);
+  values.push(c.get("user").id);
+  const query = `UPDATE app_users SET ${updates.join(", ")} WHERE id=$${idx} RETURNING id,name,email,role,organization_name,updated_at`;
+  const result = await pool.query(query, values);
+  return c.json({ profile: result.rows[0] });
 });
 
-// Read-only shipment endpoints are the first logistics migration slice.
-// Mutations stay disabled until shipment creation and event integrity are covered by tests.
+/* ════════════════════════════════════════════════════════════════════
+   WALLET & FINANCIAL LEDGER
+   ════════════════════════════════════════════════════════════════════ */
+
+app.get("/api/wallet/summary", auth, async (c) => {
+  const result = await pool.query(
+    "SELECT wallet_balance_ngn, points_balance FROM app_users WHERE id=$1",
+    [c.get("user").id],
+  );
+  const row = result.rows[0] ?? { wallet_balance_ngn: 0, points_balance: 0 };
+  return c.json({
+    wallet_balance_ngn: Number(row.wallet_balance_ngn ?? 0),
+    points_balance: Number(row.points_balance ?? 0),
+    currency: "NGN",
+  });
+});
+
+app.get("/api/wallet/ledger", auth, async (c) => {
+  const limit = parseLimit(c.req.query("limit"));
+  const result = await pool.query(
+    "SELECT id,amount_ngn,balance_after_ngn,description,transaction_type,reference,created_at FROM wallet_ledger WHERE user_id=$1 ORDER BY created_at DESC LIMIT $2",
+    [c.get("user").id, limit],
+  );
+  return c.json({ entries: result.rows });
+});
+
+/* ════════════════════════════════════════════════════════════════════
+   SHIPMENTS & PUBLIC TRACKING
+   ════════════════════════════════════════════════════════════════════ */
+
 app.get("/api/shipments", auth, async (c) => {
   const limit = parseLimit(c.req.query("limit"));
-  const status = c.req.query("status")?.trim().toLowerCase();
-  if (status && !["pending", "picked_up", "in_transit", "out_for_delivery", "delivered", "failed", "cancelled"].includes(status)) {
-    return fail(c, 400, "Invalid shipment status");
-  }
-  const values: unknown[] = [c.get("user").id, limit];
-  let where = "user_id=$1";
-  if (c.get("user").role === "admin" && c.req.query("all") === "true") where = "TRUE";
-  if (status) {
-    values.push(status);
-    where += ` AND status=$${values.length}`;
-  }
-  const result = await pool.query(
-    `SELECT id,tracking_number,status,sender_name,sender_city,sender_state,sender_country,
-            recipient_name,recipient_city,recipient_state,recipient_country,package_description,
-            weight,service_type,estimated_delivery,created_at,updated_at
-     FROM shipments WHERE ${where} ORDER BY created_at DESC LIMIT $2`,
-    values,
-  );
+  const user = c.get("user");
+  const queryAll = c.req.query("all") === "true" && user.role === "admin";
+  const result = queryAll
+    ? await pool.query("SELECT * FROM shipments ORDER BY created_at DESC LIMIT $1", [limit])
+    : await pool.query("SELECT * FROM shipments WHERE user_id=$1 ORDER BY created_at DESC LIMIT $2", [user.id, limit]);
   return c.json({ shipments: result.rows });
 });
 
 app.get("/api/shipments/:id", auth, async (c) => {
-  const id = c.req.param("id").trim();
-  if (!id || id.length > 128) return fail(c, 400, "Invalid shipment id");
-  const result = c.get("user").role === "admin"
-    ? await pool.query("SELECT * FROM shipments WHERE id=$1 OR tracking_number=$1 LIMIT 1", [id])
-    : await pool.query("SELECT * FROM shipments WHERE user_id=$1 AND (id=$2 OR tracking_number=$2) LIMIT 1", [c.get("user").id, id]);
+  const id = c.req.param("id");
+  const user = c.get("user");
+  const result = await pool.query("SELECT * FROM shipments WHERE id=$1", [id]);
   const shipment = result.rows[0];
   if (!shipment) return fail(c, 404, "Shipment not found");
+  if (user.role !== "admin" && shipment.user_id !== user.id) {
+    return fail(c, 403, "Access denied to this shipment");
+  }
   const events = await pool.query(
-    "SELECT id,status,location,description,metadata,occurred_at FROM shipment_events WHERE shipment_id=$1 ORDER BY occurred_at ASC",
+    "SELECT id,status,location,description,metadata,occurred_at FROM shipment_events WHERE shipment_id=$1 ORDER BY occurred_at DESC",
+    [id],
+  );
+  return c.json({ shipment, events: events.rows });
+});
+
+const createShipmentSchema = z.object({
+  sender_name: z.string().trim().min(1).max(100),
+  sender_phone: z.string().trim().min(1).max(30),
+  sender_email: z.string().email().max(254),
+  sender_address: z.string().trim().min(1).max(250),
+  sender_city: z.string().trim().min(1).max(100),
+  sender_state: z.string().trim().min(1).max(100),
+  sender_country: z.string().trim().min(1).max(100),
+  sender_postal_code: z.string().trim().min(1).max(20),
+  recipient_name: z.string().trim().min(1).max(100),
+  recipient_phone: z.string().trim().min(1).max(30),
+  recipient_email: z.string().email().max(254),
+  recipient_address: z.string().trim().min(1).max(250),
+  recipient_city: z.string().trim().min(1).max(100),
+  recipient_state: z.string().trim().min(1).max(100),
+  recipient_country: z.string().trim().min(1).max(100),
+  recipient_postal_code: z.string().trim().min(1).max(20),
+  package_description: z.string().trim().min(1).max(500),
+  weight: z.number().positive(),
+  dimensions: z.string().trim().max(100).optional(),
+  service_type: z.string().trim().min(1).max(50).default("express"),
+  notes: z.string().trim().max(1000).optional(),
+});
+
+app.post("/api/shipments", auth, async (c) => {
+  const parsed = await readJson(c, createShipmentSchema);
+  if ("error" in parsed) return c.json({ error: "Invalid shipment details", details: parsed.error }, 400);
+  const data = parsed.data;
+  const shipmentId = uuid();
+  const trackingNumber = "TRK-" + randomBytes(4).toString("hex").toUpperCase() + Date.now().toString().slice(-4);
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    const result = await client.query(
+      `INSERT INTO shipments (
+        id, user_id, tracking_number, status,
+        sender_name, sender_phone, sender_email, sender_address, sender_city, sender_state, sender_country, sender_postal_code,
+        recipient_name, recipient_phone, recipient_email, recipient_address, recipient_city, recipient_state, recipient_country, recipient_postal_code,
+        package_description, weight, dimensions, service_type, notes
+      ) VALUES (
+        $1, $2, $3, 'pending',
+        $4, $5, $6, $7, $8, $9, $10, $11,
+        $12, $13, $14, $15, $16, $17, $18, $19,
+        $20, $21, $22, $23, $24
+      ) RETURNING *`,
+      [
+        shipmentId, c.get("user").id, trackingNumber,
+        data.sender_name, data.sender_phone, data.sender_email, data.sender_address, data.sender_city, data.sender_state, data.sender_country, data.sender_postal_code,
+        data.recipient_name, data.recipient_phone, data.recipient_email, data.recipient_address, data.recipient_city, data.recipient_state, data.recipient_country, data.recipient_postal_code,
+        data.package_description, data.weight, data.dimensions ?? null, data.service_type, data.notes ?? null,
+      ],
+    );
+    await client.query(
+      "INSERT INTO shipment_events (shipment_id, status, location, description) VALUES ($1, 'pending', $2, 'Shipment scheduled and label created')",
+      [shipmentId, `${data.sender_city}, ${data.sender_country}`],
+    );
+    await client.query("COMMIT");
+    return c.json({ shipment: result.rows[0] }, 201);
+  } catch (error) {
+    await client.query("ROLLBACK").catch(() => undefined);
+    console.error("Failed to create shipment:", error instanceof Error ? error.message : "unknown");
+    return fail(c, 500, "Unable to create shipment");
+  } finally {
+    client.release();
+  }
+});
+
+const updateShipmentSchema = z.object({
+  status: z.enum(['pending','picked_up','in_transit','out_for_delivery','delivered','failed','cancelled']).optional(),
+  package_description: z.string().trim().max(500).optional(),
+  dimensions: z.string().trim().max(100).optional(),
+  weight: z.number().positive().optional(),
+  notes: z.string().trim().max(1000).optional(),
+  location: z.string().trim().max(200).optional(),
+  event_description: z.string().trim().max(500).optional(),
+});
+
+app.patch("/api/shipments/:id", auth, async (c) => {
+  const id = c.req.param("id");
+  const user = c.get("user");
+  const parsed = await readJson(c, updateShipmentSchema);
+  if ("error" in parsed) return fail(c, 400, "Invalid shipment update details");
+  const current = await pool.query("SELECT * FROM shipments WHERE id=$1", [id]);
+  if (!current.rows[0]) return fail(c, 404, "Shipment not found");
+  if (user.role !== "admin" && current.rows[0].user_id !== user.id) {
+    return fail(c, 403, "Access denied to update shipment");
+  }
+
+  const updates: string[] = [];
+  const values: unknown[] = [];
+  let idx = 1;
+
+  if (parsed.data.status !== undefined) {
+    updates.push(`status=$${idx++}`);
+    values.push(parsed.data.status);
+  }
+  if (parsed.data.package_description !== undefined) {
+    updates.push(`package_description=$${idx++}`);
+    values.push(parsed.data.package_description);
+  }
+  if (parsed.data.dimensions !== undefined) {
+    updates.push(`dimensions=$${idx++}`);
+    values.push(parsed.data.dimensions);
+  }
+  if (parsed.data.weight !== undefined) {
+    updates.push(`weight=$${idx++}`);
+    values.push(parsed.data.weight);
+  }
+  if (parsed.data.notes !== undefined) {
+    updates.push(`notes=$${idx++}`);
+    values.push(parsed.data.notes);
+  }
+
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    let updatedShipment = current.rows[0];
+    if (updates.length > 0) {
+      updates.push(`updated_at=NOW()`);
+      values.push(id);
+      const query = `UPDATE shipments SET ${updates.join(", ")} WHERE id=$${idx} RETURNING *`;
+      const res = await client.query(query, values);
+      updatedShipment = res.rows[0];
+    }
+    if (parsed.data.status && parsed.data.status !== current.rows[0].status) {
+      await client.query(
+        "INSERT INTO shipment_events (shipment_id, status, location, description) VALUES ($1, $2, $3, $4)",
+        [
+          id,
+          parsed.data.status,
+          parsed.data.location ?? null,
+          parsed.data.event_description ?? `Shipment status changed to ${parsed.data.status.replace(/_/g, " ")}`,
+        ],
+      );
+    }
+    await client.query("COMMIT");
+    return c.json({ shipment: updatedShipment });
+  } catch (error) {
+    await client.query("ROLLBACK").catch(() => undefined);
+    return fail(c, 500, "Unable to update shipment");
+  } finally {
+    client.release();
+  }
+});
+
+// Public Tracking: safe milestone lookup by tracking number (unauthenticated)
+app.get("/api/tracking/:trackingNumber", async (c) => {
+  const trackingNumber = c.req.param("trackingNumber").trim().toUpperCase();
+  const result = await pool.query(
+    `SELECT id, tracking_number, status, service_type,
+            sender_city, sender_country,
+            recipient_city, recipient_country,
+            package_description, weight, estimated_delivery, created_at, updated_at
+     FROM shipments WHERE tracking_number=$1`,
+    [trackingNumber],
+  );
+  const shipment = result.rows[0];
+  if (!shipment) return fail(c, 404, "Tracking number not found");
+  const events = await pool.query(
+    "SELECT id, status, location, description, occurred_at FROM shipment_events WHERE shipment_id=$1 ORDER BY occurred_at DESC",
     [shipment.id],
   );
   return c.json({ shipment, events: events.rows });
 });
 
-app.get("/api/catalog", auth, async (c) => {
+/* ════════════════════════════════════════════════════════════════════
+   CATALOG & COMMERCE ORDERS
+   ════════════════════════════════════════════════════════════════════ */
+
+app.get("/api/catalog", async (c) => {
   const limit = parseLimit(c.req.query("limit"));
   const tenantId = c.req.query("tenantId")?.trim();
-  if (tenantId && tenantId.length > 128) return fail(c, 400, "Invalid tenantId");
-  if (tenantId) {
-    const membership = await pool.query(
-      "SELECT 1 FROM tenant_sites s LEFT JOIN tenant_users tu ON tu.tenant_id=s.id AND tu.user_id=$2 WHERE s.id=$1 AND (s.owner_user_id=$2 OR tu.user_id=$2) LIMIT 1",
-      [tenantId, c.get("user").id],
-    );
-    if (membership.rowCount !== 1 && c.get("user").role !== "admin") return fail(c, 403, "Tenant access denied");
-  }
   const result = tenantId
     ? await pool.query(
       "SELECT id,tenant_id,sku,name,description,category,price_minor,currency,metadata,updated_at FROM catalog_products WHERE is_active=TRUE AND (tenant_id IS NULL OR tenant_id=$1) ORDER BY category,name LIMIT $2",
@@ -394,6 +671,108 @@ app.get("/api/catalog", auth, async (c) => {
   return c.json({ products: result.rows });
 });
 
+const createOrderSchema = z.object({
+  items: z.array(z.object({
+    productId: z.string().min(1),
+    quantity: z.number().int().positive().default(1),
+  })).min(1),
+  currency: z.string().length(3).default("NGN"),
+});
+
+app.post("/api/orders", auth, async (c) => {
+  const parsed = await readJson(c, createOrderSchema);
+  if ("error" in parsed) return fail(c, 400, "Invalid order request");
+  const orderId = uuid();
+  const userId = c.get("user").id;
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    let subtotal = 0;
+    const resolvedItems: Array<{ id: string; name: string; price_minor: number; quantity: number }> = [];
+
+    for (const item of parsed.data.items) {
+      const prodRes = await client.query(
+        "SELECT id, name, price_minor FROM catalog_products WHERE id=$1 AND is_active=TRUE",
+        [item.productId],
+      );
+      if (!prodRes.rows[0]) throw new Error(`Product not found or inactive: ${item.productId}`);
+      const prod = prodRes.rows[0];
+      const lineTotal = Number(prod.price_minor) * item.quantity;
+      subtotal += lineTotal;
+      resolvedItems.push({ id: prod.id, name: prod.name, price_minor: Number(prod.price_minor), quantity: item.quantity });
+    }
+
+    const fee = 0;
+    const total = subtotal + fee;
+
+    const orderRes = await client.query(
+      `INSERT INTO commerce_orders (id, user_id, status, currency, subtotal_minor, fee_minor, total_minor)
+       VALUES ($1, $2, 'pending', $3, $4, $5, $6) RETURNING *`,
+      [orderId, userId, parsed.data.currency, subtotal, fee, total],
+    );
+
+    for (const item of resolvedItems) {
+      await client.query(
+        `INSERT INTO commerce_order_items (order_id, product_id, product_name_snapshot, quantity, unit_price_minor, line_total_minor)
+         VALUES ($1, $2, $3, $4, $5, $6)`,
+        [orderId, item.id, item.name, item.quantity, item.price_minor, item.price_minor * item.quantity],
+      );
+    }
+
+    await client.query("COMMIT");
+    return c.json({ order: orderRes.rows[0], items: resolvedItems }, 201);
+  } catch (error) {
+    await client.query("ROLLBACK").catch(() => undefined);
+    return fail(c, 400, error instanceof Error ? error.message : "Failed to place order");
+  } finally {
+    client.release();
+  }
+});
+
+app.get("/api/orders", auth, async (c) => {
+  const limit = parseLimit(c.req.query("limit"));
+  const result = await pool.query(
+    "SELECT id,tenant_id,status,currency,subtotal_minor,fee_minor,total_minor,created_at,updated_at FROM commerce_orders WHERE user_id=$1 ORDER BY created_at DESC LIMIT $2",
+    [c.get("user").id, limit],
+  );
+  return c.json({ orders: result.rows });
+});
+
+/* ════════════════════════════════════════════════════════════════════
+   NOTIFICATIONS & TENANTS
+   ════════════════════════════════════════════════════════════════════ */
+
+app.get("/api/notifications", auth, async (c) => {
+  const limit = parseLimit(c.req.query("limit"));
+  const result = await pool.query(
+    "SELECT id,tenant_id,category,title,body,read_at,action_url,created_at FROM user_notifications WHERE user_id=$1 ORDER BY created_at DESC LIMIT $2",
+    [c.get("user").id, limit],
+  );
+  return c.json({ notifications: result.rows });
+});
+
+app.patch("/api/notifications/:id/read", auth, async (c) => {
+  const id = c.req.param("id");
+  await pool.query("UPDATE user_notifications SET read_at=NOW() WHERE id=$1 AND user_id=$2", [id, c.get("user").id]);
+  return c.json({ ok: true });
+});
+
+app.get("/api/tenants", auth, async (c) => {
+  const user = c.get("user");
+  const result = user.role === "admin"
+    ? await pool.query("SELECT id,site_name,display_name,subdomain,site_type,currency,country,is_active,created_at FROM tenant_sites ORDER BY created_at DESC LIMIT 200")
+    : await pool.query(
+      `SELECT s.id,s.site_name,s.display_name,s.subdomain,s.site_type,s.currency,s.country,s.is_active,s.created_at
+       FROM tenant_sites s LEFT JOIN tenant_users tu ON tu.tenant_id=s.id
+       WHERE s.owner_user_id=$1 OR tu.user_id=$1 ORDER BY s.created_at DESC LIMIT 200`, [user.id],
+    );
+  return c.json({ tenants: result.rows });
+});
+
+/* ════════════════════════════════════════════════════════════════════
+   ADMINISTRATOR OPERATIONS
+   ════════════════════════════════════════════════════════════════════ */
+
 app.get("/api/admin/users", auth, adminOnly, async (c) => {
   const limit = parseLimit(c.req.query("limit"));
   const result = await pool.query(
@@ -401,37 +780,129 @@ app.get("/api/admin/users", auth, adminOnly, async (c) => {
   );
   return c.json({ users: result.rows });
 });
-app.get("/api/wallet/summary", auth, async (c) => {
-  const userId = c.get("user").id;
-  const [account, totals] = await Promise.all([
-    pool.query("SELECT wallet_balance_ngn FROM app_users WHERE id=$1", [userId]),
-    pool.query(
-      `SELECT COALESCE(SUM(CASE WHEN amount_ngn > 0 THEN amount_ngn ELSE 0 END),0) AS total_credits_ngn,
-              COALESCE(SUM(CASE WHEN amount_ngn < 0 THEN ABS(amount_ngn) ELSE 0 END),0) AS total_debits_ngn,
-              COUNT(*)::int AS entry_count
-       FROM wallet_ledger WHERE user_id=$1`,
-      [userId],
-    ),
-  ]);
-  if (!account.rows[0]) return fail(c, 404, "Wallet account not found");
+
+const updateUserStatusSchema = z.object({
+  role: z.enum(["admin", "user", "vendor"]).optional(),
+  is_suspended: z.boolean().optional(),
+  is_terminated: z.boolean().optional(),
+});
+
+app.patch("/api/admin/users/:id", auth, adminOnly, async (c) => {
+  const targetId = c.req.param("id");
+  const parsed = await readJson(c, updateUserStatusSchema);
+  if ("error" in parsed) return fail(c, 400, "Invalid user update");
+  const updates: string[] = [];
+  const values: unknown[] = [];
+  let idx = 1;
+  if (parsed.data.role !== undefined) {
+    updates.push(`role=$${idx++}`);
+    values.push(parsed.data.role);
+  }
+  if (parsed.data.is_suspended !== undefined) {
+    updates.push(`is_suspended=$${idx++}`);
+    values.push(parsed.data.is_suspended);
+  }
+  if (parsed.data.is_terminated !== undefined) {
+    updates.push(`is_terminated=$${idx++}`);
+    values.push(parsed.data.is_terminated);
+  }
+  if (updates.length === 0) return c.json({ ok: true });
+  updates.push(`updated_at=NOW()`);
+  values.push(targetId);
+  const result = await pool.query(`UPDATE app_users SET ${updates.join(", ")} WHERE id=$${idx} RETURNING id,name,email,role,is_suspended,is_terminated`, values);
+  return c.json({ user: result.rows[0] });
+});
+
+app.get("/api/admin/shipments", auth, adminOnly, async (c) => {
+  const limit = parseLimit(c.req.query("limit"));
+  const result = await pool.query("SELECT * FROM shipments ORDER BY created_at DESC LIMIT $1", [limit]);
+  return c.json({ shipments: result.rows });
+});
+
+const createProductSchema = z.object({
+  name: z.string().trim().min(1).max(150),
+  category: z.string().trim().min(1).max(50),
+  price_minor: z.number().int().nonnegative(),
+  currency: z.string().length(3).default("NGN"),
+  description: z.string().trim().max(1000).optional(),
+  sku: z.string().trim().max(100).optional(),
+  provider: z.string().trim().max(50).optional(),
+});
+
+app.post("/api/admin/catalog", auth, adminOnly, async (c) => {
+  const parsed = await readJson(c, createProductSchema);
+  if ("error" in parsed) return fail(c, 400, "Invalid catalog product");
+  const id = uuid();
+  const d = parsed.data;
+  const result = await pool.query(
+    `INSERT INTO catalog_products (id, sku, name, description, category, provider, price_minor, currency)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING *`,
+    [id, d.sku ?? null, d.name, d.description ?? null, d.category, d.provider ?? null, d.price_minor, d.currency],
+  );
+  return c.json({ product: result.rows[0] }, 201);
+});
+
+app.patch("/api/admin/catalog/:id", auth, adminOnly, async (c) => {
+  const id = c.req.param("id");
+  const parsed = await readJson(c, createProductSchema.partial());
+  if ("error" in parsed) return fail(c, 400, "Invalid update");
+  const updates: string[] = [];
+  const values: unknown[] = [];
+  let idx = 1;
+  if (parsed.data.name !== undefined) { updates.push(`name=$${idx++}`); values.push(parsed.data.name); }
+  if (parsed.data.price_minor !== undefined) { updates.push(`price_minor=$${idx++}`); values.push(parsed.data.price_minor); }
+  if (parsed.data.category !== undefined) { updates.push(`category=$${idx++}`); values.push(parsed.data.category); }
+  if (parsed.data.description !== undefined) { updates.push(`description=$${idx++}`); values.push(parsed.data.description); }
+  if (updates.length === 0) return c.json({ ok: true });
+  updates.push(`updated_at=NOW()`);
+  values.push(id);
+  const result = await pool.query(`UPDATE catalog_products SET ${updates.join(", ")} WHERE id=$${idx} RETURNING *`, values);
+  return c.json({ product: result.rows[0] });
+});
+
+app.delete("/api/admin/catalog/:id", auth, adminOnly, async (c) => {
+  const id = c.req.param("id");
+  await pool.query("UPDATE catalog_products SET is_active=FALSE WHERE id=$1", [id]);
+  return c.json({ ok: true });
+});
+
+app.get("/api/admin/settings", auth, adminOnly, async (c) => {
+  const result = await pool.query("SELECT key, value, updated_at FROM platform_settings ORDER BY key");
+  return c.json({ settings: result.rows });
+});
+
+const updateSettingSchema = z.object({
+  key: z.string().trim().min(1).max(100),
+  value: z.unknown(),
+});
+
+app.post("/api/admin/settings", auth, adminOnly, async (c) => {
+  const parsed = await readJson(c, updateSettingSchema);
+  if ("error" in parsed) return fail(c, 400, "Invalid setting payload");
+  await pool.query(
+    `INSERT INTO platform_settings (key, value, updated_at, updated_by)
+     VALUES ($1, $2, NOW(), $3)
+     ON CONFLICT (key) DO UPDATE SET value=EXCLUDED.value, updated_at=NOW(), updated_by=EXCLUDED.updated_by`,
+    [parsed.data.key, JSON.stringify(parsed.data.value), c.get("user").id],
+  );
+  return c.json({ ok: true });
+});
+
+app.get("/api/admin/reports", auth, adminOnly, async (c) => {
+  const usersCount = await pool.query("SELECT COUNT(*) AS count FROM app_users");
+  const shipmentsCount = await pool.query("SELECT COUNT(*) AS count FROM shipments");
+  const ordersCount = await pool.query("SELECT COUNT(*) AS count FROM commerce_orders");
+  const pendingShipments = await pool.query("SELECT COUNT(*) AS count FROM shipments WHERE status='pending'");
   return c.json({
-    balanceNgn: account.rows[0].wallet_balance_ngn,
-    totalCreditsNgn: totals.rows[0]?.total_credits_ngn ?? "0",
-    totalDebitsNgn: totals.rows[0]?.total_debits_ngn ?? "0",
-    entryCount: totals.rows[0]?.entry_count ?? 0,
+    totalUsers: Number(usersCount.rows[0]?.count ?? 0),
+    totalShipments: Number(shipmentsCount.rows[0]?.count ?? 0),
+    totalOrders: Number(ordersCount.rows[0]?.count ?? 0),
+    pendingShipments: Number(pendingShipments.rows[0]?.count ?? 0),
   });
 });
 
-app.get("/api/wallet/ledger", auth, async (c) => {
-  const limit = parseLimit(c.req.query("limit"));
-  const result = await pool.query(
-    "SELECT id,amount_ngn,balance_after_ngn,description,transaction_type,reference,created_at FROM wallet_ledger WHERE user_id=$1 ORDER BY created_at DESC LIMIT $2",
-    [c.get("user").id, limit],
-  );
-  return c.json({ entries: result.rows });
-});
 app.notFound((c) => c.json({ error: "Not found" }, 404));
-app.onError((error, c) => {
+app.onError((error: Error, c) => {
   console.error("Unhandled API error", error.message);
   return c.json({ error: "Internal server error" }, 500);
 });
@@ -441,6 +912,7 @@ app.onError((error, c) => {
 const server = process.env.NODE_ENV === "test" ? undefined : serve({ fetch: app.fetch, port }, (info) => {
   console.log(`Cloudie Neon API listening on ${info.port}`);
 });
+
 let shuttingDown = false;
 const shutdown = async () => {
   if (shuttingDown) return;
