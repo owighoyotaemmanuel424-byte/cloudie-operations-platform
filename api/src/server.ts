@@ -73,24 +73,28 @@ async function signToken(user: User, sessionId: string) {
 const auth: MiddlewareHandler<{ Variables: Variables }> = async (c, next) => {
   const token = tokenFrom(c);
   if (!token) return fail(c, 401, "Authentication required");
+  let subject: string | undefined;
+  let sessionId: string | undefined;
   try {
     const { payload } = await jwtVerify(token, jwtSecret, { issuer: "cloudie-neon-api", audience: "cloudie-web" });
-    if (!payload.sub || !payload.jti) return fail(c, 401, "Invalid session");
-    const activeSession = await pool.query(
-      "SELECT id FROM api_sessions WHERE id=$1 AND user_id=$2 AND revoked_at IS NULL AND expires_at > NOW()",
-      [payload.jti, payload.sub],
-    );
-    if (activeSession.rowCount !== 1) return fail(c, 401, "Session expired or revoked");
-    const result = await pool.query<User & QueryResultRow>(
-      "SELECT id,email,name,role,is_suspended,is_terminated FROM app_users WHERE id=$1", [payload.sub],
-    );
-    const user = result.rows[0];
-    if (!user || user.is_suspended || user.is_terminated) return fail(c, 401, "Account unavailable");
-    c.set("user", user);
-    await next();
+    subject = payload.sub;
+    sessionId = payload.jti;
   } catch {
     return fail(c, 401, "Invalid or expired session");
   }
+  if (!subject || !sessionId) return fail(c, 401, "Invalid session");
+  const activeSession = await pool.query(
+    "SELECT id FROM api_sessions WHERE id=$1 AND user_id=$2 AND revoked_at IS NULL AND expires_at > NOW()",
+    [sessionId, subject],
+  );
+  if (activeSession.rowCount !== 1) return fail(c, 401, "Session expired or revoked");
+  const result = await pool.query<User & QueryResultRow>(
+    "SELECT id,email,name,role,is_suspended,is_terminated FROM app_users WHERE id=$1", [subject],
+  );
+  const user = result.rows[0];
+  if (!user || user.is_suspended || user.is_terminated) return fail(c, 401, "Account unavailable");
+  c.set("user", user);
+  await next();
 };
 const adminOnly: MiddlewareHandler<{ Variables: Variables }> = async (c, next) => {
   if (c.get("user").role !== "admin") return fail(c, 403, "Administrator access required");
