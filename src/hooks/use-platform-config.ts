@@ -7,6 +7,7 @@ import {
   type BrandConfig,
   type QuickActionConfig,
   type SupportConfig,
+  QUICK_ACTION_CATALOG,
 } from "@/lib/platformConfig";
 
 /**
@@ -36,11 +37,16 @@ export function usePlatformConfig(): {
           name: remoteBrand.name || DEFAULT_BRAND.name,
           tagline: remoteBrand.tagline || DEFAULT_BRAND.tagline,
           logoUrl: remoteBrand.logoUrl || DEFAULT_BRAND.logoUrl,
-          accentColor: remoteBrand.accentColor || DEFAULT_BRAND.accentColor,
+          accent: remoteBrand.accentColor || DEFAULT_BRAND.accent,
+          accentDark: remoteBrand.accentColor || DEFAULT_BRAND.accentDark,
           footerNote: remoteBrand.footerNote || DEFAULT_BRAND.footerNote,
         });
         setSupport({ ...DEFAULT_SUPPORT, ...remoteSupport });
-        setQuickActions(remoteQuickActions?.length ? remoteQuickActions : DEFAULT_QUICK_ACTIONS);
+        const validQuickActions: QuickActionConfig[] = (remoteQuickActions ?? []).flatMap((action) => {
+          const catalogItem = QUICK_ACTION_CATALOG.find((candidate) => candidate.kind === action.kind);
+          return catalogItem ? [{ kind: catalogItem.kind, label: action.label || catalogItem.label }] : [];
+        });
+        setQuickActions(validQuickActions.length ? validQuickActions : DEFAULT_QUICK_ACTIONS);
         setHasCustomBrand(custom);
       })
       .catch(() => {
