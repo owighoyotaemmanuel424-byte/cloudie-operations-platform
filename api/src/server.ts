@@ -15,7 +15,7 @@ const jwtSecretValue = process.env.JWT_SECRET;
 if (!databaseUrl) throw new Error("DATABASE_URL is required");
 if (!jwtSecretValue || Buffer.byteLength(jwtSecretValue) < 32) throw new Error("JWT_SECRET must be at least 32 bytes");
 const jwtSecret = new TextEncoder().encode(jwtSecretValue);
-const pool = new Pool({
+export const pool = new Pool({
   connectionString: databaseUrl,
   max: Number(process.env.PG_POOL_MAX ?? 10),
   idleTimeoutMillis: 30_000,
