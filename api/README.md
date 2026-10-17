@@ -12,7 +12,7 @@ This is a separate Node.js API service for a gradual Convex-to-Neon migration. I
 ## API routes
 
 - Health: `GET /health` and `GET /api/health`.
-- Authentication: `POST /api/auth/register`, `POST /api/auth/login`, `POST /api/auth/logout`.
+- Authentication: `GET /api/auth/csrf`, `POST /api/auth/register`, `POST /api/auth/login`, `POST /api/auth/logout`.
 - Session and customer reads: `GET /api/me`, `GET /api/profile`, `GET /api/tenants`, `GET /api/notifications`, `GET /api/orders`, `GET /api/catalog`.
 - Admin read: `GET /api/admin/users` (administrator only).
 - Wallet history: `GET /api/wallet/ledger` (the signed-in user's own entries only).
@@ -25,7 +25,7 @@ A Render Blueprint is provided in the repository root at `render.yaml`. Review i
 ## Security and parity status
 - Public registration creates only the ordinary `user` role. It does not accept a role, tenant, wallet balance, or admin flag from the client.
 - Passwords use Node scrypt with random salts; the session cookie is HttpOnly, SameSite=Lax, Secure in production, and expires after eight hours. Session IDs are persisted in Neon, checked on authenticated requests, and revoked on logout. The separate frontend migration client currently stores a bearer token in sessionStorage; prefer a same-origin proxy with HttpOnly cookies before switching the production UI.
-- Unsafe cross-origin requests are rejected using an exact Origin allowlist. Keep the frontend and API on HTTPS.
+- Unsafe requests reject untrusted origins. Cookie-authenticated state changes additionally require a matching `cloudie_csrf` cookie and `X-CSRF-Token` header; `GET /api/auth/csrf` issues a token cookie without returning its value in JSON. Bearer-token clients remain supported during the incremental migration. Cookie-only browser sessions require a same-origin gateway and the frontend must copy the readable CSRF cookie into the header. Keep the frontend and API on HTTPS.
 - This initial service does not yet implement email verification, password reset, distributed rate limiting, tenant-site creation, wallet mutations, banking transfers, provider webhooks, or Convex data import.
 - Existing Convex users are not automatically migrated and cannot use the new API until credential migration is designed and verified.
 - Admin creation must be a controlled operator action; never add admin assignment to public registration.
