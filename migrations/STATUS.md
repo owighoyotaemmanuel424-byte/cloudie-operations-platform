@@ -7,7 +7,8 @@ Last updated: 2026-10-17
 - `002_tenant_banking.sql`: tenant membership, accounts, beneficiaries, deposits, withdrawals, transfers, double-entry ledger records.
 - `003_core_services.sql`: subscriptions, shipments/events, documents, KYC, file metadata, catalog, orders/items, notifications.
 - `004_auth_fields.sql`: password hash, password-change timestamp, and persistent revocable API sessions.
-- `005_financial_integrity.sql`: deferred double-entry balance checks and immutability for posted ledger groups; applied successfully to the isolated Neon test branch. Behavior-level ledger tests are still outstanding.
+- `005_financial_integrity.sql`: deferred double-entry balance checks and immutability for posted ledger groups; applied successfully to the isolated Neon test branch.
+- `migrations/tests/005_financial_integrity_test.sql`: rollback-only behavior test for balanced posting, rejection of an unbalanced posting, and immutability of posted entries.
 - `api/src/server.ts`: initial Hono/Node API with health, registration/login/logout, current-user, tenant listing, admin user listing, and read-only wallet ledger endpoints.
 - `api/package.json`, `api/tsconfig.json`, `api/.env.example`, `api/README.md`: API runtime configuration and operator instructions.
 - `api/scripts/smoke.mjs`: HTTP smoke checks for health and protected endpoints.
@@ -17,7 +18,7 @@ Last updated: 2026-10-17
 ## Development database validation
 The initial schema was applied to a **separate Neon test branch** named `cloudie-neon-migration-test` (`br-ancient-violet-b4ribqi8`). Database inspection confirmed 24 public base tables, including the persistent session table. The authentication columns and `api_sessions` table in migration 004 were also added successfully on that test branch. No SQL was applied to the production branch.
 
-Migrations 001–004 and the DDL in migration 005 have been applied to the isolated Neon test branch. The 005 functions and triggers were created successfully; no end-to-end ledger behavior tests have been run yet. GitHub Actions passed the API TypeScript build on commit `03011f7909cca957b4229ccef4cb8e2c6e611da9`; the latest migration/API commits still require fresh CI verification. The API HTTP smoke script has not been run against a deployed service; authentication parity, financial correctness, and data migration remain unverified.
+Migrations 001–004 and the DDL in migration 005 have been applied to the isolated Neon test branch. The 005 functions and triggers were created successfully. The rollback-only SQL behavior test ran successfully on the test branch; fixtures were designed to roll back. This is not a substitute for full application-level transaction and concurrency tests. GitHub Actions runs for the latest commits are queued/pending; wait for both API CI and repository CI to finish before merging. The API HTTP smoke script has not been run against a deployed service; authentication parity, financial correctness, and data migration remain unverified.
 
 ## API scope and safety
 - Public registration can create only normal `user` accounts; role assignment is not accepted from the client.
