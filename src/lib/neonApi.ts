@@ -39,6 +39,8 @@ function readCsrfCookie() {
 }
 
 export function getNeonToken() {
+  // Same-origin gateway deployments must use the HttpOnly cookie only.
+  if (SAME_ORIGIN_API) return null;
   try { return window.sessionStorage.getItem(TOKEN_KEY); } catch { return null; }
 }
 
@@ -51,7 +53,8 @@ export function getCachedNeonUser(): NeonUser | null {
 
 function saveSession(session: NeonSession) {
   try {
-    if (session.token) window.sessionStorage.setItem(TOKEN_KEY, session.token);
+    if (session.token && !SAME_ORIGIN_API) window.sessionStorage.setItem(TOKEN_KEY, session.token);
+    else window.sessionStorage.removeItem(TOKEN_KEY);
     window.sessionStorage.setItem(USER_KEY, JSON.stringify(session.user));
   } catch {
     throw new Error("Your browser blocked session storage. Enable site storage and try again.");
@@ -68,7 +71,8 @@ export function clearNeonSession() {
 async function request<T>(path: string, init: RequestInit = {}, authenticated = true): Promise<T> {
   const headers = new Headers(init.headers);
   if (init.body && !headers.has("Content-Type")) headers.set("Content-Type", "application/json");
-  const token = authenticated ? getNeonToken() : null;
+  // Same-origin mode uses the HttpOnly cookie as the only credential.
+  const token = authenticated && !SAME_ORIGIN_API ? getNeonToken() : null;
   if (token) headers.set("Authorization", `Bearer ${token}`);
   if (["POST", "PUT", "PATCH", "DELETE"].includes((init.method ?? "GET").toUpperCase())) {
     const csrfToken = readCsrfCookie();
