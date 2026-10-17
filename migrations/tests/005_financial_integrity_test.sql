@@ -60,6 +60,18 @@ BEGIN
     RAISE EXCEPTION 'TEST FAILED: posted ledger entry was mutable';
   END IF;
 
+  v_failed := FALSE;
+  BEGIN
+    INSERT INTO banking_ledger_entries
+      (ledger_group_id, tenant_id, ledger_account_code, direction, amount_minor, currency)
+    VALUES (v_good_group_id, v_tenant_id, 'late-entry', 'debit', 1000, 'USD');
+  EXCEPTION WHEN check_violation THEN
+    v_failed := TRUE;
+  END;
+  IF NOT v_failed THEN
+    RAISE EXCEPTION 'TEST FAILED: entry was inserted into a posted ledger group';
+  END IF;
+
   INSERT INTO banking_ledger_groups
     (id, tenant_id, reference, description, currency, status)
   VALUES (v_currency_group_id, v_tenant_id, v_currency_group_id, 'currency mismatch test', 'USD', 'draft');
@@ -85,7 +97,7 @@ BEGIN
   RAISE EXCEPTION 'CLOUDIE_TEST_ROLLBACK';
 EXCEPTION WHEN OTHERS THEN
   IF SQLERRM = 'CLOUDIE_TEST_ROLLBACK' THEN
-    RAISE NOTICE 'PASS: balanced posting, unbalanced rejection, posted-entry immutability, and group-currency checks completed; fixtures rolled back';
+    RAISE NOTICE 'PASS: balanced posting, unbalanced rejection, posted-entry update/insert immutability, and group-currency checks completed; fixtures rolled back';
   ELSE
     RAISE;
   END IF;
