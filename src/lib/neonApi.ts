@@ -68,13 +68,26 @@ export function clearNeonSession() {
   } catch { /* storage may be unavailable */ }
 }
 
+async function ensureCsrfCookie() {
+  if (!SAME_ORIGIN_API || readCsrfCookie()) return;
+  const response = await fetch(`${baseUrl()}/api/auth/csrf`, {
+    method: "GET",
+    credentials: "include",
+    cache: "no-store",
+    headers: { Accept: "application/json" },
+  });
+  if (!response.ok) throw new NeonApiError("Unable to initialize secure session. Please retry.", response.status);
+}
+
 async function request<T>(path: string, init: RequestInit = {}, authenticated = true): Promise<T> {
+  const method = (init.method ?? "GET").toUpperCase();
+  if (["POST", "PUT", "PATCH", "DELETE"].includes(method)) await ensureCsrfCookie();
   const headers = new Headers(init.headers);
   if (init.body && !headers.has("Content-Type")) headers.set("Content-Type", "application/json");
   // Same-origin mode uses the HttpOnly cookie as the only credential.
   const token = authenticated && !SAME_ORIGIN_API ? getNeonToken() : null;
   if (token) headers.set("Authorization", `Bearer ${token}`);
-  if (["POST", "PUT", "PATCH", "DELETE"].includes((init.method ?? "GET").toUpperCase())) {
+  if (["POST", "PUT", "PATCH", "DELETE"].includes(method)) {
     const csrfToken = readCsrfCookie();
     if (csrfToken) headers.set("X-CSRF-Token", csrfToken);
   }
