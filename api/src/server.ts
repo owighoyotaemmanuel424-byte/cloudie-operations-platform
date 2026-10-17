@@ -210,7 +210,7 @@ app.post("/api/auth/register", async (c) => {
       path: "/", maxAge: 8 * 60 * 60,
     });
     setCsrfCookie(c);
-    return c.json({ user: { id: user.id, email: user.email, name: user.name, role: user.role }, token }, 201);
+    return c.json({ user: { id: user.id, email: user.email, name: user.name, role: user.role }, ...(process.env.COOKIE_ONLY_SESSIONS === "true" ? {} : { token }) }, 201);
   } catch (error) {
     await client.query("ROLLBACK").catch(() => undefined);
     if (typeof error === "object" && error !== null && "code" in error && error.code === "23505") return fail(c, 409, "An account with this email already exists");
@@ -235,7 +235,7 @@ app.post("/api/auth/login", async (c) => {
   }
   const token = await setSession(c, user);
   setCsrfCookie(c);
-  return c.json({ user: { id: user.id, email: user.email, name: user.name, role: user.role }, token });
+  return c.json({ user: { id: user.id, email: user.email, name: user.name, role: user.role }, ...(process.env.COOKIE_ONLY_SESSIONS === "true" ? {} : { token }) });
 });
 app.post("/api/auth/logout", async (c) => {
   const token = tokenFrom(c);
