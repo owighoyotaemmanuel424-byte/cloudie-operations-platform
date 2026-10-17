@@ -11,6 +11,7 @@ DECLARE
   v_entry_count BIGINT;
   v_bad_currency_count BIGINT;
   v_bad_tenant_count BIGINT;
+  v_bad_group_currency_count BIGINT;
 BEGIN
   SELECT status INTO v_status
   FROM banking_ledger_groups
@@ -41,6 +42,17 @@ BEGIN
 
   IF v_bad_currency_count > 0 THEN
     RAISE EXCEPTION 'Posted ledger group % is not balanced per currency', p_group_id
+      USING ERRCODE = '23514';
+  END IF;
+
+  SELECT COUNT(*) INTO v_bad_group_currency_count
+  FROM banking_ledger_entries e
+  JOIN banking_ledger_groups g ON g.id = e.ledger_group_id
+  WHERE e.ledger_group_id = p_group_id
+    AND e.currency <> g.currency;
+
+  IF v_bad_group_currency_count > 0 THEN
+    RAISE EXCEPTION 'Ledger entries in group % must match the group currency', p_group_id
       USING ERRCODE = '23514';
   END IF;
 
