@@ -29,8 +29,9 @@ export class NeonApiError extends Error {
 }
 
 function baseUrl() {
-  if (API_BASE_URL) return API_BASE_URL;
+  // Explicit same-origin mode must override a configured direct API URL, otherwise the gateway is bypassed.
   if (SAME_ORIGIN_API) return "";
+  if (API_BASE_URL) return API_BASE_URL;
   throw new Error("Neon API is not configured. Set VITE_NEON_API_URL or enable VITE_NEON_API_SAME_ORIGIN after configuring the same-origin API gateway.");
 }
 
