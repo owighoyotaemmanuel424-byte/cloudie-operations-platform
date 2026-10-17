@@ -20,7 +20,7 @@ const pool = new Pool({
   max: Number(process.env.PG_POOL_MAX ?? 10),
   idleTimeoutMillis: 30_000,
   connectionTimeoutMillis: 10_000,
-  ssl: databaseUrl.includes("localhost") || databaseUrl.includes("127.0.0.1") ? undefined : { rejectUnauthorized: true },
+  ssl: ["localhost", "127.0.0.1", "::1"].includes(new URL(databaseUrl).hostname) ? undefined : { rejectUnauthorized: true },
 });
 pool.on("error", (error) => console.error("Unexpected idle PostgreSQL client error", error.message));
 
@@ -165,9 +165,18 @@ app.post("/api/auth/register", async (c) => {
        RETURNING id,email,name,role,is_suspended,is_terminated`,
       [uuid(), parsed.data.name, email, passwordHash],
     );
-    await client.query("COMMIT");
     const user = inserted.rows[0];
-    await setSession(c, user);
+    const sessionId = uuid();
+    const token = await signToken(user, sessionId);
+    await client.query(
+      "INSERT INTO api_sessions (id,user_id,expires_at) VALUES ($1,$2,NOW()+INTERVAL '8 hours')",
+      [sessionId, user.id],
+    );
+    await client.query("COMMIT");
+    setCookie(c, "cloudie_session", token, {
+      httpOnly: true, secure: process.env.NODE_ENV === "production", sameSite: "Lax",
+      path: "/", maxAge: 8 * 60 * 60,
+    });
     return c.json({ user: { id: user.id, email: user.email, name: user.name, role: user.role } }, 201);
   } catch (error) {
     await client.query("ROLLBACK").catch(() => undefined);
@@ -185,9 +194,12 @@ app.post("/api/auth/login", async (c) => {
     "SELECT id,email,name,role,is_suspended,is_terminated,password_hash FROM app_users WHERE lower(email)=lower($1)", [email],
   );
   const user = result.rows[0];
-  // Avoid revealing whether the account exists.
-  if (!user?.password_hash || !(await verifyPassword(parsed.data.password, user.password_hash))) return fail(c, 401, "Invalid email or password");
-  if (user.is_suspended || user.is_terminated) return fail(c, 403, "Account unavailable");
+  // Always pay the scrypt cost, even for missing accounts, malformed hashes, or disabled accounts.
+  const dummyHash = "scrypt:" + "00".repeat(16) + ":" + "00".repeat(64);
+  const passwordValid = await verifyPassword(parsed.data.password, user?.password_hash ?? dummyHash).catch(() => false);
+  if (!user || !user.password_hash || !passwordValid || user.is_suspended || user.is_terminated) {
+    return fail(c, 401, "Invalid email or password");
+  }
   await setSession(c, user);
   return c.json({ user: { id: user.id, email: user.email, name: user.name, role: user.role } });
 });
@@ -243,10 +255,13 @@ app.onError((error, c) => {
 const server = serve({ fetch: app.fetch, port }, (info) => {
   console.log(`Cloudie Neon API listening on ${info.port}`);
 });
+let shuttingDown = false;
 const shutdown = async () => {
-  server.close();
+  if (shuttingDown) return;
+  shuttingDown = true;
+  await new Promise<void>((resolve) => server.close(() => resolve()));
   await pool.end();
   process.exit(0);
 };
-process.on("SIGTERM", shutdown);
-process.on("SIGINT", shutdown);
+process.on("SIGTERM", () => { void shutdown(); });
+process.on("SIGINT", () => { void shutdown(); });
