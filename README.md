@@ -104,3 +104,10 @@ InfinityFree serves the static frontend only; Convex remains the application bac
 The Convex URL is public frontend configuration, not a deploy key. Never put `CONVEX_DEPLOY_KEY`, provider API keys, passwords, or other secrets in `VITE_*` variables or uploaded frontend files. If authentication redirects or external integrations reject the new domain, update the relevant allowlists/configuration in the Convex deployment and provider dashboards.
 
 This repository change does not itself upload files or prove the production build succeeds. Build and runtime testing are still required before launch.
+
+
+## Neon PostgreSQL migration
+
+The current production application still uses Convex; Neon is provisioned but has not replaced the application backend. Do not change `VITE_CONVEX_URL` or remove Convex until the backend and data migration are complete.
+
+See [Neon migration readiness](./docs/neon-migration-readiness.md) for the verified architecture, safe migration phases, financial-integrity requirements, and InfinityFree hosting constraints.
