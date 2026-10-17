@@ -97,6 +97,22 @@ test("rejects a mismatched CSRF cookie and header", async () => {
   assert.equal(response.status, 403);
 });
 
+test("rejects malformed non-ASCII CSRF tokens without throwing", async () => {
+  const response = await app.request("/api/auth/logout", {
+    method: "POST",
+    headers: {
+      Origin: "http://localhost:5173",
+      Cookie: "cloudie_session=present; cloudie_csrf=é",
+      "X-CSRF-Token": "é",
+      "Content-Type": "application/json",
+    },
+    body: "{}",
+  });
+
+  assert.equal(response.status, 403);
+  assert.deepEqual(await response.json(), { error: "CSRF validation failed" });
+});
+
 test("accepts a matching CSRF cookie and header and clears both cookies on logout", async () => {
   const response = await app.request("/api/auth/logout", {
     method: "POST",
