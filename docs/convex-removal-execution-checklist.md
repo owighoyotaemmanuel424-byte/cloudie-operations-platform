@@ -14,6 +14,7 @@ Target: static Vite/React frontend on InfinityFree, Node API on Render, PostgreS
 
 ## Current implementation checkpoint (2026-10-17)
 - API changes are committed to this migration branch; no production cutover has occurred.
+- The Neon API CI workflow passed for the previous checkpoint; the latest wallet-summary changes are awaiting their own CI run.
 - Shipment creation/update and financial writes remain intentionally unavailable in the new API until authorization, transaction integrity, and idempotency tests exist.
 - CI/build/test execution must be confirmed before treating this slice as verified.
 
