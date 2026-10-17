@@ -16,7 +16,7 @@ Last updated: 2026-10-17
 ## Development database validation
 The initial schema was applied to a **separate Neon test branch** named `cloudie-neon-migration-test` (`br-ancient-violet-b4ribqi8`). Database inspection confirmed 23 public base tables. The authentication columns in migration 004 were also added successfully on that test branch. No SQL was applied to the production branch.
 
-This is database DDL smoke validation only. API dependency installation, TypeScript build, endpoint smoke tests, authentication parity, financial correctness, and data migration have not been verified yet.
+This is database DDL smoke validation only. GitHub Actions installed API dependencies and passed the API TypeScript build. The API HTTP smoke script has not been run against a deployed service; authentication parity, financial correctness, and data migration remain unverified.
 
 ## API scope and safety
 - Public registration can create only normal `user` accounts; role assignment is not accepted from the client.
