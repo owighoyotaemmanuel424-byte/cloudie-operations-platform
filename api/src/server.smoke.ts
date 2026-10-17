@@ -175,13 +175,14 @@ test("reports database connectivity and required schema readiness separately", a
   try {
     const response = await app.request("/health");
     assert.equal(response.status, 200);
-    assert.deepEqual(await response.json(), {
-      ok: true,
-      service: "cloudie-neon-api",
-      database: "connected",
-      schema: "ready",
-      timestamp: (await response.clone().json()).timestamp,
-    });
+    const body = await response.json() as {
+      ok: boolean; service: string; database: string; schema: string; timestamp: string;
+    };
+    assert.equal(body.ok, true);
+    assert.equal(body.service, "cloudie-neon-api");
+    assert.equal(body.database, "connected");
+    assert.equal(body.schema, "ready");
+    assert.match(body.timestamp, /^\\d{4}-\\d{2}-\\d{2}T/);
   } finally {
     mutablePool.query = originalQuery;
   }
