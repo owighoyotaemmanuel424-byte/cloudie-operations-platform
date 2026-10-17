@@ -3,30 +3,36 @@
 Last updated: 2026-10-17
 
 ## Implemented in repository
-- `001_foundation.sql`: user identity records, tenant sites, wallet ledger, settings, migration bookkeeping.
-- `002_tenant_banking.sql`: tenant membership, accounts, beneficiaries, deposits, withdrawals, transfers, and ledger groups/entries.
-- `003_core_services.sql`: service subscriptions, shipments/events, user documents, KYC, file metadata, catalog, orders/items, notifications.
-- `002_tenant_banking.md`: banking invariants and operational cautions.
-- `README.md`: migration safety and hosting constraints.
+- `001_foundation.sql`: users, tenant sites, wallet ledger, settings, migration bookkeeping.
+- `002_tenant_banking.sql`: tenant membership, accounts, beneficiaries, deposits, withdrawals, transfers, double-entry ledger records.
+- `003_core_services.sql`: subscriptions, shipments/events, documents, KYC, file metadata, catalog, orders/items, notifications.
+- `004_auth_fields.sql`: password hash and password-change timestamp fields for the shadow API.
+- `api/src/server.ts`: initial Hono/Node API with health, registration/login/logout, current-user, tenant listing, admin user listing, and read-only wallet ledger endpoints.
+- `api/package.json`, `api/tsconfig.json`, `api/.env.example`, `api/README.md`: API runtime configuration and operator instructions.
+- `api/scripts/smoke.mjs`: HTTP smoke checks for health and protected endpoints.
+- `render.yaml`: Render Blueprint for hosting the separate Node API.
+- Root README links the migration status and explicitly retains Convex as production backend.
 
 ## Development database validation
-The migrations' DDL has been applied to a **separate Neon test branch** named `cloudie-neon-migration-test` (`br-ancient-violet-b4ribqi8`) for the Cloudie project. The database inspection returned 23 public base tables, including the banking and core service tables.
+The initial schema was applied to a **separate Neon test branch** named `cloudie-neon-migration-test` (`br-ancient-violet-b4ribqi8`). Database inspection confirmed 23 public base tables. The authentication columns in migration 004 were also added successfully on that test branch. No SQL was applied to the production branch.
 
-This is schema smoke validation only. It is not yet proof of application compatibility, authentication parity, financial correctness, or data migration. No SQL was applied to the production `production` branch.
+This is database DDL smoke validation only. API dependency installation, TypeScript build, endpoint smoke tests, authentication parity, financial correctness, and data migration have not been verified yet.
 
-## Not yet migrated
-- Convex query/mutation/action logic and frontend data hooks.
-- Authentication/session flows and authorization enforcement.
-- Atomic balance updates, transaction processing, webhook signature/replay checks, and ledger balancing enforcement.
-- Existing Convex data export/import and record-count/reconciliation checks.
-- Automated integration tests and production API deployment.
+## API scope and safety
+- Public registration can create only normal `user` accounts; role assignment is not accepted from the client.
+- Passwords use Node scrypt; sessions are currently signed eight-hour JWT cookies.
+- Exact Origin allowlist checks are in place for unsafe requests.
+- API routes are a shadow scaffold and are **not connected to the existing frontend**.
+- There are intentionally no wallet or banking write endpoints yet.
+- Existing Convex users are not automatically migrated and cannot log in to this API until credential migration is designed and tested.
 
-## Required next work
-1. Add a server-side API runtime and database access layer. Keep Neon credentials server-side; never expose them through `VITE_*`.
-2. Implement authentication and tenant/admin authorization before exposing any data endpoint.
-3. Implement all financial writes in transactions with idempotency and double-entry balance enforcement.
-4. Add automated tests for permissions, duplicate requests, concurrent debits, rollback, and reconciliation.
-5. Migrate data and compare counts and balances in a shadow run before planning cutover.
-6. Keep Convex live until parity is demonstrated and rollback has been rehearsed.
+## Remaining before production
+1. Install dependencies and pass TypeScript build plus smoke tests in CI or a controlled environment.
+2. Add persistent revocable sessions, distributed rate limiting, email verification/password reset, monitoring, and security review.
+3. Build tenant and admin management operations with strict authorization and audit logs.
+4. Implement atomic financial operations with idempotency, double-entry balancing, concurrency protection, webhook verification, and reconciliation tests.
+5. Migrate Convex records through an audited export/import; compare counts and wallet balances.
+6. Connect frontend feature-by-feature and run parity tests in staging.
+7. Deploy the API against a staging database and rehearse rollback before any production cutover.
 
-InfinityFree can host the static Vite build, but not the server-side Node API required for secure Neon access. The API must be hosted separately.
+InfinityFree can host the static Vite build, but cannot run the server-side Node API required for secure Neon access. The API must be hosted separately. Keep Convex live until parity is demonstrated.
