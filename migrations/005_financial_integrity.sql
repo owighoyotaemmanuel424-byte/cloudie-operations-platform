@@ -121,7 +121,7 @@ BEGIN
   IF TG_OP = 'DELETE' THEN RETURN OLD; END IF;
   RETURN NEW;
 END;
-$;
+$$;
 
 DROP TRIGGER IF EXISTS banking_ledger_entries_immutable_posted ON banking_ledger_entries;
 CREATE TRIGGER banking_ledger_entries_immutable_posted
@@ -140,7 +140,7 @@ BEGIN
   IF TG_OP = 'DELETE' THEN RETURN OLD; END IF;
   RETURN NEW;
 END;
-$;
+$$;
 
 DROP TRIGGER IF EXISTS banking_ledger_groups_immutable_posted ON banking_ledger_groups;
 CREATE TRIGGER banking_ledger_groups_immutable_posted
