@@ -284,8 +284,8 @@ test("lists only the signed-in user's shipments by default", async () => {
     });
     assert.equal(response.status, 200);
     assert.equal((await response.json() as { shipments: unknown[] }).shipments.length, 1);
-    assert.match(shipmentQuery?.sql ?? "", /WHERE user_id=\$1/);
-    assert.deepEqual(shipmentQuery?.values, ["test-user", 20]);
+    assert.match(shipmentQuery?.sql ?? "", /WHERE user_id=\$1 AND status=\$3/);
+    assert.deepEqual(shipmentQuery?.values, ["test-user", 20, "in_transit"]);
   } finally {
     mutablePool.query = originalQuery;
   }
