@@ -11,7 +11,7 @@ This is a separate Node.js API service for a gradual Convex-to-Neon migration. I
 
 ## API routes
 
-- Health: `GET /health` and `GET /api/health`.
+- Health: `GET /health` and `GET /api/health`. The health check verifies PostgreSQL connectivity and the presence of the required core tables (`app_users`, `api_sessions`, `tenant_sites`, `tenant_users`, `wallet_ledger`, `catalog_products`, `commerce_orders`, and `user_notifications`). It returns HTTP 503 when the database is unavailable or the required schema is incomplete; `database: connected` does not identify the database provider.
 - Authentication: `GET /api/auth/csrf`, `POST /api/auth/register`, `POST /api/auth/login`, `POST /api/auth/logout`.
 - Session and customer reads: `GET /api/me`, `GET /api/profile`, `GET /api/tenants`, `GET /api/notifications`, `GET /api/orders`, `GET /api/catalog`.
 - Admin read: `GET /api/admin/users` (administrator only).
