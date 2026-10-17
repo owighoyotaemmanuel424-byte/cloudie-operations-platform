@@ -4,6 +4,8 @@ const COOKIE_ONLY_SESSIONS = import.meta.env.VITE_NEON_COOKIE_ONLY === "true";
 
 const TOKEN_KEY = "cloudie_api_token";
 const USER_KEY = "cloudie_api_user";
+// Truthy marker lets existing auth bootstrap call /api/me while the browser sends its HttpOnly cookie.
+const COOKIE_SESSION_MARKER = "__cloudie_cookie_session__";
 
 export type NeonUser = {
   id: string;
@@ -40,7 +42,7 @@ function readCsrfCookie() {
 }
 
 export function getNeonToken() {
-  if (COOKIE_ONLY_SESSIONS) return null;
+  if (COOKIE_ONLY_SESSIONS) return COOKIE_SESSION_MARKER;
   try { return window.sessionStorage.getItem(TOKEN_KEY); } catch { return null; }
 }
 
@@ -72,7 +74,7 @@ async function request<T>(path: string, init: RequestInit = {}, authenticated = 
   const headers = new Headers(init.headers);
   if (init.body && !headers.has("Content-Type")) headers.set("Content-Type", "application/json");
   const token = authenticated ? getNeonToken() : null;
-  if (token) headers.set("Authorization", `Bearer ${token}`);
+  if (token && token !== COOKIE_SESSION_MARKER) headers.set("Authorization", `Bearer ${token}`);
   if (["POST", "PUT", "PATCH", "DELETE"].includes((init.method ?? "GET").toUpperCase())) {
     const csrfToken = readCsrfCookie();
     if (csrfToken) headers.set("X-CSRF-Token", csrfToken);
