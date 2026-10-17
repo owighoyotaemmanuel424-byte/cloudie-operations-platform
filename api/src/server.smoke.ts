@@ -496,3 +496,49 @@ test("shipment detail does not expose another user's shipment", async () => {
     mutablePool.query = originalQuery;
   }
 });
+
+
+test("public configuration returns safe defaults when Neon settings are unavailable", async () => {
+  const originalQuery = pool.query.bind(pool);
+  (pool as unknown as { query: (...args: unknown[]) => Promise<unknown> }).query = async () => {
+    throw new Error("simulated database outage");
+  };
+  try {
+    const response = await app.request("/api/public-config");
+    assert.equal(response.status, 200);
+    const body = await response.json() as { config: Record<string, unknown>; source: string };
+    assert.equal(body.source, "fallback");
+    assert.equal(body.config.platformName, "Cloudie");
+    assert.equal(body.config.maintenanceMode, false);
+    assert.equal("DATABASE_URL" in body.config, false);
+  } finally {
+    (pool as unknown as { query: (...args: unknown[]) => Promise<unknown> }).query = originalQuery;
+  }
+});
+
+test("public configuration only exposes approved fields from Neon settings", async () => {
+  const originalQuery = pool.query.bind(pool);
+  (pool as unknown as { query: (...args: unknown[]) => Promise<unknown> }).query = async () => ({
+    rowCount: 1,
+    rows: [{ value: {
+      platformName: "Cloudie Operations",
+      tagline: "Ship smarter",
+      logoUrl: "javascript:alert(1)",
+      supportUrl: "https://support.example.test",
+      secretKey: "never expose this",
+      maintenanceMode: true,
+    } }],
+  });
+  try {
+    const response = await app.request("/api/public-config");
+    assert.equal(response.status, 200);
+    const body = await response.json() as { config: Record<string, unknown>; source: string };
+    assert.equal(body.source, "database");
+    assert.equal(body.config.platformName, "Cloudie Operations");
+    assert.equal(body.config.logoUrl, "");
+    assert.equal(body.config.supportUrl, "https://support.example.test");
+    assert.equal("secretKey" in body.config, false);
+  } finally {
+    (pool as unknown as { query: (...args: unknown[]) => Promise<unknown> }).query = originalQuery;
+  }
+});
