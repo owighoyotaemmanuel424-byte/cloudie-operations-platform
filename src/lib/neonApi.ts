@@ -1,5 +1,6 @@
 const API_BASE_URL = (import.meta.env.VITE_NEON_API_URL as string | undefined)?.replace(/\/$/, "");
 const SAME_ORIGIN_API = import.meta.env.VITE_NEON_API_SAME_ORIGIN === "true";
+const COOKIE_ONLY_SESSIONS = import.meta.env.VITE_NEON_COOKIE_ONLY === "true";
 
 const TOKEN_KEY = "cloudie_api_token";
 const USER_KEY = "cloudie_api_user";
@@ -39,6 +40,7 @@ function readCsrfCookie() {
 }
 
 export function getNeonToken() {
+  if (COOKIE_ONLY_SESSIONS) return null;
   try { return window.sessionStorage.getItem(TOKEN_KEY); } catch { return null; }
 }
 
@@ -51,7 +53,8 @@ export function getCachedNeonUser(): NeonUser | null {
 
 function saveSession(session: NeonSession) {
   try {
-    if (session.token) window.sessionStorage.setItem(TOKEN_KEY, session.token);
+    if (session.token && !COOKIE_ONLY_SESSIONS) window.sessionStorage.setItem(TOKEN_KEY, session.token);
+    else window.sessionStorage.removeItem(TOKEN_KEY);
     window.sessionStorage.setItem(USER_KEY, JSON.stringify(session.user));
   } catch {
     throw new Error("Your browser blocked session storage. Enable site storage and try again.");
