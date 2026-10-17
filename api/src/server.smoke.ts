@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { SignJWT } from "jose";
 
 // Configure before importing server.ts: this keeps the app unbound to a port and
 // prevents these middleware tests from requiring a reachable PostgreSQL instance.
@@ -8,7 +9,7 @@ process.env.DATABASE_URL = "postgres://cloudie_test:cloudie_test@127.0.0.1:5432/
 process.env.JWT_SECRET = "test-only-secret-that-is-longer-than-thirty-two-bytes";
 process.env.CORS_ORIGINS = "http://localhost:5173";
 
-const { app } = await import("./server.js");
+const { app, pool } = await import("./server.js");
 
 test("rejects unsafe requests from an untrusted browser origin", async () => {
   const response = await app.request("/api/auth/logout", {
@@ -124,4 +125,111 @@ test("issues a random CSRF cookie without exposing the token in JSON", async () 
   const setCookie = response.headers.get("set-cookie") ?? "";
   assert.match(setCookie, /cloudie_csrf=/);
   assert.doesNotMatch(setCookie, /HttpOnly/i);
+});
+
+test("rejects unauthenticated access to protected and administrator routes", async () => {
+  const protectedResponse = await app.request("/api/me");
+  const adminResponse = await app.request("/api/admin/users");
+
+  assert.equal(protectedResponse.status, 401);
+  assert.equal(adminResponse.status, 401);
+});
+
+test("rejects malformed registration and login payloads before database access", async () => {
+  const registration = await app.request("/api/auth/register", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name: "", email: "not-an-email", password: "short" }),
+  });
+  const login = await app.request("/api/auth/login", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email: "not-an-email", password: "" }),
+  });
+
+  assert.equal(registration.status, 400);
+  assert.equal(login.status, 400);
+});
+
+test("returns 503 when the configured PostgreSQL database is unavailable", async () => {
+  const mutablePool = pool as unknown as { query: (...args: unknown[]) => Promise<unknown> };
+  const originalQuery = mutablePool.query;
+  mutablePool.query = async () => { throw new Error("simulated database outage"); };
+  try {
+    const response = await app.request("/health");
+    assert.equal(response.status, 503);
+    assert.deepEqual(await response.json(), {
+      ok: false,
+      service: "cloudie-neon-api",
+      database: "unavailable",
+    });
+  } finally {
+    mutablePool.query = originalQuery;
+  }
+});
+
+test("denies a non-admin session from administrator-only user management", async () => {
+  const secret = new TextEncoder().encode(process.env.JWT_SECRET);
+  const token = await new SignJWT({ email: "user@example.com", role: "user" })
+    .setProtectedHeader({ alg: "HS256" })
+    .setSubject("test-user")
+    .setJti("test-session")
+    .setIssuedAt()
+    .setIssuer("cloudie-neon-api")
+    .setAudience("cloudie-web")
+    .setExpirationTime("5m")
+    .sign(secret);
+  const mutablePool = pool as unknown as { query: (...args: unknown[]) => Promise<unknown> };
+  const originalQuery = mutablePool.query;
+  mutablePool.query = async (...args: unknown[]) => {
+    const sql = String(args[0] ?? "");
+    if (sql.includes("FROM api_sessions")) return { rows: [{ id: "test-session" }], rowCount: 1 };
+    if (sql.includes("FROM app_users")) return {
+      rows: [{
+        id: "test-user",
+        email: "user@example.com",
+        name: "Test User",
+        role: "user",
+        is_suspended: false,
+        is_terminated: false,
+      }],
+      rowCount: 1,
+    };
+    throw new Error("Unexpected database query in authorization test");
+  };
+
+  try {
+    const response = await app.request("/api/admin/users", {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    assert.equal(response.status, 403);
+    assert.deepEqual(await response.json(), { error: "Administrator access required" });
+  } finally {
+    mutablePool.query = originalQuery;
+  }
+});
+
+test("rejects revoked or expired server-side sessions", async () => {
+  const secret = new TextEncoder().encode(process.env.JWT_SECRET);
+  const token = await new SignJWT({ email: "user@example.com", role: "user" })
+    .setProtectedHeader({ alg: "HS256" })
+    .setSubject("test-user")
+    .setJti("revoked-session")
+    .setIssuedAt()
+    .setIssuer("cloudie-neon-api")
+    .setAudience("cloudie-web")
+    .setExpirationTime("5m")
+    .sign(secret);
+  const mutablePool = pool as unknown as { query: (...args: unknown[]) => Promise<unknown> };
+  const originalQuery = mutablePool.query;
+  mutablePool.query = async () => ({ rows: [], rowCount: 0 });
+  try {
+    const response = await app.request("/api/me", {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    assert.equal(response.status, 401);
+    assert.deepEqual(await response.json(), { error: "Session expired or revoked" });
+  } finally {
+    mutablePool.query = originalQuery;
+  }
 });
