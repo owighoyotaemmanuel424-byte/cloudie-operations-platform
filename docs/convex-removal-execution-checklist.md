@@ -12,6 +12,11 @@ Target: static Vite/React frontend on InfinityFree, Node API on Render, PostgreS
 - [ ] Existing Convex data has not been imported into Neon.
 - [ ] InfinityFree deployment has not been updated to a Convex-free build.
 
+## Current implementation checkpoint (2026-10-17)
+- API changes are committed to this migration branch; no production cutover has occurred.
+- Shipment creation/update and financial writes remain intentionally unavailable in the new API until authorization, transaction integrity, and idempotency tests exist.
+- CI/build/test execution must be confirmed before treating this slice as verified.
+
 ## Required migration slices
 1. **Foundation and auth:** schema parity, registration/login/logout, session refresh, password reset/email verification, controlled initial admin bootstrap, role checks, tenant membership, CSRF/rate limiting, and tests.
 2. **Platform configuration and identity:** profile, preferences, platform settings, branding, support, notifications, files/assets, audit logs.
