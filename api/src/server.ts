@@ -240,6 +240,57 @@ app.get("/api/tenants", auth, async (c) => {
     );
   return c.json({ tenants: result.rows });
 });
+app.get("/api/profile", auth, async (c) => {
+  const user = c.get("user");
+  const result = await pool.query(
+    "SELECT id,name,email,role,image,email_verified_at,organization_name,created_at,updated_at FROM app_users WHERE id=$1",
+    [user.id],
+  );
+  if (!result.rows[0]) return fail(c, 404, "Profile not found");
+  return c.json({ profile: result.rows[0] });
+});
+
+app.get("/api/notifications", auth, async (c) => {
+  const limit = parseLimit(c.req.query("limit"));
+  const result = await pool.query(
+    "SELECT id,tenant_id,category,title,body,read_at,action_url,created_at FROM user_notifications WHERE user_id=$1 ORDER BY created_at DESC LIMIT $2",
+    [c.get("user").id, limit],
+  );
+  return c.json({ notifications: result.rows });
+});
+
+app.get("/api/orders", auth, async (c) => {
+  const limit = parseLimit(c.req.query("limit"));
+  const result = await pool.query(
+    "SELECT id,tenant_id,status,currency,subtotal_minor,fee_minor,total_minor,created_at,updated_at FROM commerce_orders WHERE user_id=$1 ORDER BY created_at DESC LIMIT $2",
+    [c.get("user").id, limit],
+  );
+  return c.json({ orders: result.rows });
+});
+
+app.get("/api/catalog", auth, async (c) => {
+  const limit = parseLimit(c.req.query("limit"));
+  const tenantId = c.req.query("tenantId")?.trim();
+  if (tenantId && tenantId.length > 128) return fail(c, 400, "Invalid tenantId");
+  if (tenantId) {
+    const membership = await pool.query(
+      "SELECT 1 FROM tenant_sites s LEFT JOIN tenant_users tu ON tu.tenant_id=s.id AND tu.user_id=$2 WHERE s.id=$1 AND (s.owner_user_id=$2 OR tu.user_id=$2) LIMIT 1",
+      [tenantId, c.get("user").id],
+    );
+    if (membership.rowCount !== 1 && c.get("user").role !== "admin") return fail(c, 403, "Tenant access denied");
+  }
+  const result = tenantId
+    ? await pool.query(
+      "SELECT id,tenant_id,sku,name,description,category,price_minor,currency,metadata,updated_at FROM catalog_products WHERE is_active=TRUE AND (tenant_id IS NULL OR tenant_id=$1) ORDER BY category,name LIMIT $2",
+      [tenantId, limit],
+    )
+    : await pool.query(
+      "SELECT id,tenant_id,sku,name,description,category,price_minor,currency,metadata,updated_at FROM catalog_products WHERE is_active=TRUE AND tenant_id IS NULL ORDER BY category,name LIMIT $1",
+      [limit],
+    );
+  return c.json({ products: result.rows });
+});
+
 app.get("/api/admin/users", auth, adminOnly, async (c) => {
   const limit = parseLimit(c.req.query("limit"));
   const result = await pool.query(
