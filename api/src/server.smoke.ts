@@ -54,3 +54,74 @@ test("adds baseline security headers to ordinary API responses", async () => {
   assert.equal(response.headers.get("referrer-policy"), "strict-origin-when-cross-origin");
   assert.equal(response.headers.get("cache-control"), "no-store");
 });
+
+test("allows a trusted origin for a non-cookie logout request", async () => {
+  const response = await app.request("/api/auth/logout", {
+    method: "POST",
+    headers: { Origin: "http://localhost:5173", "Content-Type": "application/json" },
+    body: "{}",
+  });
+
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), { ok: true });
+});
+
+test("requires a CSRF token for cookie-authenticated unsafe requests", async () => {
+  const response = await app.request("/api/auth/logout", {
+    method: "POST",
+    headers: {
+      Origin: "http://localhost:5173",
+      Cookie: "cloudie_session=present",
+      "Content-Type": "application/json",
+    },
+    body: "{}",
+  });
+
+  assert.equal(response.status, 403);
+  assert.deepEqual(await response.json(), { error: "CSRF validation failed" });
+});
+
+test("rejects a mismatched CSRF cookie and header", async () => {
+  const response = await app.request("/api/auth/logout", {
+    method: "POST",
+    headers: {
+      Origin: "http://localhost:5173",
+      Cookie: "cloudie_session=present; cloudie_csrf=expected-token",
+      "X-CSRF-Token": "different-token",
+      "Content-Type": "application/json",
+    },
+    body: "{}",
+  });
+
+  assert.equal(response.status, 403);
+});
+
+test("accepts a matching CSRF cookie and header and clears both cookies on logout", async () => {
+  const response = await app.request("/api/auth/logout", {
+    method: "POST",
+    headers: {
+      Origin: "http://localhost:5173",
+      Cookie: "cloudie_session=present; cloudie_csrf=matching-token",
+      "X-CSRF-Token": "matching-token",
+      "Content-Type": "application/json",
+    },
+    body: "{}",
+  });
+
+  assert.equal(response.status, 200);
+  const setCookie = response.headers.get("set-cookie") ?? "";
+  assert.match(setCookie, /cloudie_session/);
+  assert.match(setCookie, /cloudie_csrf/);
+});
+
+test("issues a random CSRF cookie without exposing the token in JSON", async () => {
+  const response = await app.request("/api/auth/csrf", {
+    headers: { Origin: "http://localhost:5173" },
+  });
+
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), { ok: true });
+  const setCookie = response.headers.get("set-cookie") ?? "";
+  assert.match(setCookie, /cloudie_csrf=/);
+  assert.doesNotMatch(setCookie, /HttpOnly/i);
+});
