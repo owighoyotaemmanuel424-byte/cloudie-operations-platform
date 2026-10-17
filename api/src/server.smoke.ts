@@ -344,7 +344,7 @@ test("cookie-only login omits the JWT from JSON and sets a protected session coo
     const response = await app.request("/api/auth/login", {
       method: "POST",
       headers: {
-        Origin: "http://localhost:5173",
+        Origin: "https://cloudie.wuaze.com",
         "Content-Type": "application/json",
       },
       body: JSON.stringify({ email: "cookie@example.com", password: "correct horse battery staple" }),
