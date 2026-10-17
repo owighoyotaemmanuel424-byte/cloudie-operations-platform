@@ -1,6 +1,5 @@
-import { useQuery } from "convex/react";
-import { useMemo } from "react";
-import { api } from "@/convex/_generated/api";
+import { useEffect, useState } from "react";
+import { neonApi } from "@/lib/neonApi";
 import {
   DEFAULT_BRAND,
   DEFAULT_QUICK_ACTIONS,
@@ -11,9 +10,8 @@ import {
 } from "@/lib/platformConfig";
 
 /**
- * Live platform configuration (admin-editable appearance + support details).
- * Falls back to platform defaults until the subscription resolves so public
- * pages never render empty brand text.
+ * Public branding loads from the Neon-backed API. Defaults are applied first,
+ * so a slow or unavailable API never blocks the public application shell.
  */
 export function usePlatformConfig(): {
   brand: BrandConfig;
@@ -22,18 +20,31 @@ export function usePlatformConfig(): {
   hasCustomBrand: boolean;
   loaded: boolean;
 } {
-  const config = useQuery(api.platform.getPublicConfig);
-  const brand = useMemo<BrandConfig>(() => config?.brand ?? DEFAULT_BRAND, [config]);
-  const support = useMemo<SupportConfig>(() => config?.support ?? DEFAULT_SUPPORT, [config]);
-  const quickActions = useMemo<QuickActionConfig[]>(
-    () => config?.quickActions ?? DEFAULT_QUICK_ACTIONS,
-    [config],
-  );
-  return {
-    brand,
-    support,
-    quickActions,
-    hasCustomBrand: config?.hasCustomBrand ?? false,
-    loaded: config !== undefined,
-  };
+  const [brand, setBrand] = useState<BrandConfig>(DEFAULT_BRAND);
+  const [support] = useState<SupportConfig>(DEFAULT_SUPPORT);
+  const [quickActions] = useState<QuickActionConfig[]>(DEFAULT_QUICK_ACTIONS);
+  const [hasCustomBrand, setHasCustomBrand] = useState(false);
+  const [loaded, setLoaded] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+    neonApi.publicConfig()
+      .then(({ config, source }) => {
+        if (!active) return;
+        setBrand({
+          ...DEFAULT_BRAND,
+          name: config.platformName || DEFAULT_BRAND.name,
+          tagline: config.tagline || DEFAULT_BRAND.tagline,
+          logoUrl: config.logoUrl || DEFAULT_BRAND.logoUrl,
+        });
+        setHasCustomBrand(source === "database");
+      })
+      .catch(() => {
+        // Use safe local defaults when the API is temporarily unavailable.
+      })
+      .finally(() => { if (active) setLoaded(true); });
+    return () => { active = false; };
+  }, []);
+
+  return { brand, support, quickActions, hasCustomBrand, loaded };
 }
