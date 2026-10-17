@@ -6,7 +6,7 @@ Last updated: 2026-10-17
 - `001_foundation.sql`: users, tenant sites, wallet ledger, settings, migration bookkeeping.
 - `002_tenant_banking.sql`: tenant membership, accounts, beneficiaries, deposits, withdrawals, transfers, double-entry ledger records.
 - `003_core_services.sql`: subscriptions, shipments/events, documents, KYC, file metadata, catalog, orders/items, notifications.
-- `004_auth_fields.sql`: password hash and password-change timestamp fields for the shadow API.
+- `004_auth_fields.sql`: password hash, password-change timestamp, and persistent revocable API sessions.
 - `api/src/server.ts`: initial Hono/Node API with health, registration/login/logout, current-user, tenant listing, admin user listing, and read-only wallet ledger endpoints.
 - `api/package.json`, `api/tsconfig.json`, `api/.env.example`, `api/README.md`: API runtime configuration and operator instructions.
 - `api/scripts/smoke.mjs`: HTTP smoke checks for health and protected endpoints.
@@ -14,13 +14,13 @@ Last updated: 2026-10-17
 - Root README links the migration status and explicitly retains Convex as production backend.
 
 ## Development database validation
-The initial schema was applied to a **separate Neon test branch** named `cloudie-neon-migration-test` (`br-ancient-violet-b4ribqi8`). Database inspection confirmed 23 public base tables. The authentication columns in migration 004 were also added successfully on that test branch. No SQL was applied to the production branch.
+The initial schema was applied to a **separate Neon test branch** named `cloudie-neon-migration-test` (`br-ancient-violet-b4ribqi8`). Database inspection confirmed 23 public base tables. The authentication columns and `api_sessions` table in migration 004 were also added successfully on that test branch. No SQL was applied to the production branch.
 
 This is database DDL smoke validation only. GitHub Actions installed API dependencies and passed the API TypeScript build. The API HTTP smoke script has not been run against a deployed service; authentication parity, financial correctness, and data migration remain unverified.
 
 ## API scope and safety
 - Public registration can create only normal `user` accounts; role assignment is not accepted from the client.
-- Passwords use Node scrypt; sessions are currently signed eight-hour JWT cookies.
+- Passwords use Node scrypt; eight-hour JWT cookies are backed by persistent Neon sessions and logout revocation.
 - Exact Origin allowlist checks are in place for unsafe requests.
 - API routes are a shadow scaffold and are **not connected to the existing frontend**.
 - There are intentionally no wallet or banking write endpoints yet.
