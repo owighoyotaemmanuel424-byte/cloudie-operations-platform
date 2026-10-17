@@ -62,7 +62,14 @@ RETURNS TRIGGER
 LANGUAGE plpgsql
 AS $$
 BEGIN
-  PERFORM cloudie_assert_ledger_group_balanced(COALESCE(NEW.ledger_group_id, OLD.ledger_group_id));
+  IF TG_OP = 'DELETE' THEN
+    PERFORM cloudie_assert_ledger_group_balanced(OLD.ledger_group_id);
+  ELSE
+    PERFORM cloudie_assert_ledger_group_balanced(NEW.ledger_group_id);
+    IF TG_OP = 'UPDATE' AND OLD.ledger_group_id <> NEW.ledger_group_id THEN
+      PERFORM cloudie_assert_ledger_group_balanced(OLD.ledger_group_id);
+    END IF;
+  END IF;
   RETURN NULL;
 END;
 $$;
@@ -72,7 +79,11 @@ RETURNS TRIGGER
 LANGUAGE plpgsql
 AS $$
 BEGIN
-  PERFORM cloudie_assert_ledger_group_balanced(COALESCE(NEW.id, OLD.id));
+  IF TG_OP = 'DELETE' THEN
+    PERFORM cloudie_assert_ledger_group_balanced(OLD.id);
+  ELSE
+    PERFORM cloudie_assert_ledger_group_balanced(NEW.id);
+  END IF;
   RETURN NULL;
 END;
 $$;
@@ -97,15 +108,20 @@ DECLARE
   v_group_id TEXT;
   v_status TEXT;
 BEGIN
-  v_group_id := COALESCE(OLD.ledger_group_id, NEW.ledger_group_id);
+  IF TG_OP = 'DELETE' THEN
+    v_group_id := OLD.ledger_group_id;
+  ELSE
+    v_group_id := NEW.ledger_group_id;
+  END IF;
   SELECT status INTO v_status FROM banking_ledger_groups WHERE id = v_group_id;
   IF v_status = 'posted' THEN
     RAISE EXCEPTION 'Entries in posted ledger group % are immutable; post a compensating reversal instead', v_group_id
       USING ERRCODE = '23514';
   END IF;
-  RETURN COALESCE(NEW, OLD);
+  IF TG_OP = 'DELETE' THEN RETURN OLD; END IF;
+  RETURN NEW;
 END;
-$$;
+$;
 
 DROP TRIGGER IF EXISTS banking_ledger_entries_immutable_posted ON banking_ledger_entries;
 CREATE TRIGGER banking_ledger_entries_immutable_posted
@@ -121,9 +137,10 @@ BEGIN
     RAISE EXCEPTION 'Posted ledger group % is immutable; create a compensating reversal group instead', OLD.id
       USING ERRCODE = '23514';
   END IF;
-  RETURN COALESCE(NEW, OLD);
+  IF TG_OP = 'DELETE' THEN RETURN OLD; END IF;
+  RETURN NEW;
 END;
-$$;
+$;
 
 DROP TRIGGER IF EXISTS banking_ledger_groups_immutable_posted ON banking_ledger_groups;
 CREATE TRIGGER banking_ledger_groups_immutable_posted
