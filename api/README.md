@@ -19,6 +19,14 @@ This is a separate Node.js API service for a gradual Convex-to-Neon migration. I
 
 The notifications, orders, and catalog list endpoints accept a bounded `limit` query parameter (maximum 100). `GET /api/tenants` uses its fixed server-side limit. Catalog tenant filtering requires the current user to own or belong to that tenant, unless the user is an administrator.
 
+## Deployment and staged same-origin gateway
+
+The Vercel configuration now proxies `/api/*` and `/health` to the explicitly named staging API origin. The Render Blueprint allows the verified Vercel production hostname and the existing `cloudie.wuaze.com` hostname as request origins. The frontend flags remain disabled by default; adding gateway routes does not itself switch the customer UI to Neon.
+
+For a controlled staging verification, set the frontend build variables `VITE_NEON_API_SAME_ORIGIN=true` and `VITE_NEON_COOKIE_ONLY=true`, and set the API runtime variable `COOKIE_ONLY_SESSIONS=true`. Configure these in a staging/preview environment first. The API flag suppresses the JWT in login/register JSON; the frontend flag stops reading or sending any legacy sessionStorage bearer token. Do not enable these flags in production until registration, login, refresh/reload, protected reads, CSRF-protected writes, logout, session revocation, and fallback/rollback have been verified against the deployed gateway. The API remains backward compatible when `COOKIE_ONLY_SESSIONS` is unset or false.
+
+The proxy target in `vercel.json` is the staging service, not a production API. Do not repoint production customer traffic to it or treat it as a production backend. Before a production migration, replace the staging target with the independently verified production API origin and verify the deployed commit and database identity.
+
 ## Deployment
 A Render Blueprint is provided in the repository root at `render.yaml`. Review it before deployment, then set `DATABASE_URL` to the Neon **test** branch first and verify the health endpoint. Set `CORS_ORIGINS` to the exact frontend origin. Never expose database credentials or JWT secrets as `VITE_*` variables.
 
