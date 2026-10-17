@@ -127,9 +127,9 @@ export const neonApi = {
   },
   async publicConfig() {
     return request<{
-      brand: { name: string; tagline: string; accentColor: string; footerNote: string };
+      brand: { name: string; tagline: string; accentColor: string; footerNote: string; logoUrl?: string };
       support: { email: string; phone: string; hours: string; widgetEnabled: boolean; widgetTitle: string; widgetMessage: string; faqs: Array<{ question: string; answer: string }> };
-      quickActions: Array<{ label: string; href: string }>;
+      quickActions: Array<{ kind?: string; label: string }>;
       hasCustomBrand: boolean;
     }>("/api/public-config", {}, false);
   },
