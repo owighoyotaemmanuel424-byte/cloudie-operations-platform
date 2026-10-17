@@ -49,8 +49,10 @@ app.use("*", async (c, next) => {
     if (hasCookie && !usesBearer) {
       const cookieToken = getCookie(c, "cloudie_csrf");
       const headerToken = c.req.header("x-csrf-token");
-      if (!cookieToken || !headerToken || cookieToken.length !== headerToken.length ||
-          !timingSafeEqual(Buffer.from(cookieToken), Buffer.from(headerToken))) {
+      const cookieBytes = cookieToken ? Buffer.from(cookieToken, "utf8") : null;
+      const headerBytes = headerToken ? Buffer.from(headerToken, "utf8") : null;
+      if (!cookieBytes || !headerBytes || cookieBytes.length !== headerBytes.length ||
+          !timingSafeEqual(cookieBytes, headerBytes)) {
         return c.json({ error: "CSRF validation failed" }, 403);
       }
     }
