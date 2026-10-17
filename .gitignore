@@ -1,6 +1,9 @@
-.env.local
+.env
+.env.*
+!.env.example
 node_modules
 dist
+api/dist
 
 # Convex's generated client is committed on purpose — Convex recommends it.
 # `convex deploy --cmd "<build>"` runs the build BEFORE it regenerates this
