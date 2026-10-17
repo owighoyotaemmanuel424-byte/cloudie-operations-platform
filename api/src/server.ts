@@ -180,6 +180,43 @@ app.get("/health", async (c) => {
 });
 app.get("/api/health", (c) => c.redirect("/health", 307));
 
+// Public, non-secret platform configuration. Never return provider keys, internal
+// infrastructure details, or admin-only settings from this endpoint.
+const publicConfigDefaults = {
+  platformName: "Cloudie",
+  tagline: "Operations, commerce and logistics in one place",
+  supportEmail: "",
+  supportUrl: "",
+  logoUrl: "",
+  maintenanceMode: false,
+};
+app.get("/api/public-config", async (c) => {
+  try {
+    const result = await pool.query<{ value: unknown }>(
+      "SELECT value FROM platform_settings WHERE key = $1 LIMIT 1",
+      ["public_config"],
+    );
+    const stored = result.rows[0]?.value;
+    const config = stored && typeof stored === "object" && !Array.isArray(stored)
+      ? stored as Record<string, unknown>
+      : {};
+    const safe = {
+      platformName: typeof config.platformName === "string" ? config.platformName.slice(0, 80) : publicConfigDefaults.platformName,
+      tagline: typeof config.tagline === "string" ? config.tagline.slice(0, 180) : publicConfigDefaults.tagline,
+      supportEmail: typeof config.supportEmail === "string" ? config.supportEmail.slice(0, 254) : "",
+      supportUrl: typeof config.supportUrl === "string" && /^https?:\/\//i.test(config.supportUrl) ? config.supportUrl.slice(0, 500) : "",
+      logoUrl: typeof config.logoUrl === "string" && (/^https?:\/\//i.test(config.logoUrl) || config.logoUrl.startsWith("/")) ? config.logoUrl.slice(0, 500) : "",
+      maintenanceMode: config.maintenanceMode === true,
+    };
+    return c.json({ config: safe, source: result.rowCount ? "database" : "defaults" });
+  } catch (error) {
+    console.error("Public config query failed", error instanceof Error ? error.message : "unknown");
+    // Keep the public landing shell available during a settings-table outage.
+    return c.json({ config: publicConfigDefaults, source: "fallback" });
+  }
+});
+
+
 /**
  * Registration creates ordinary users only. It deliberately does not accept a role,
  * tenant, wallet balance, or admin flag from the client.
