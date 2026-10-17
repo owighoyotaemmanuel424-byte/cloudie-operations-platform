@@ -2,6 +2,7 @@
 
 **Audit date:** 2026-10-17  
 **Baseline commit:** `13b8b920449a3a8cc076447548563452dd828990`  
+**Latest documented source baseline:** `e7471f394d1eee95e5ca87768abbd17c926a3355`  
 **Purpose:** Inventory the routed frontend surfaces and Convex module families before migration. This is a source-tree audit baseline, not proof that every hook call has been traced. Do not remove Convex fallback or enable financial writes based on this document.
 
 ## Verified cross-cutting dependencies
@@ -80,11 +81,24 @@ For each route before declaring it migrated:
 - `api/package.json` defines build and typecheck scripts but no API test script. An API-focused test harness and explicit auth/session tests are required before the session cutover.
 - `api/src/server.ts` exposes read-only API endpoints for profile, notifications, orders, catalog, tenants, admin users, and wallet ledger. This does not establish parity for the corresponding Convex queries, subscriptions, mutations, or authorization rules.
 
-### Current route-level status
+### Current route-level status (updated 2026-10-17)
+
+The project owner supplied this live staging response at `2026-10-17T11:41:46.714Z`:
+
+```json
+{
+  "ok": true,
+  "service": "cloudie-neon-api",
+  "database": "connected",
+  "timestamp": "2026-10-17T11:41:46.714Z"
+}
+```
+
+This is evidence that the deployed staging API returned healthy and could reach Neon at that timestamp. The response alone does not identify the deployed commit or validate auth, browser cookies, authorization, route parity, or financial workflows.
 
 | Capability | Neon source endpoint | Evidence level | Safe status |
 |---|---|---|---|
-| Health + DB connectivity | `GET /health` | Implemented in source; live staged response unavailable to this audit | Unverified until deployment/HTTP evidence is recorded |
+| Health + DB connectivity | `GET /health` | Live response supplied by project owner at the timestamp above; deployed commit SHA still not correlated | Staging health confirmed at that timestamp; repeat after deployment and record deployed SHA |
 | Register/login/logout/current user | `/api/auth/*`, `GET /api/me` | Implemented in source; cookie-only browser flow not verified | Do not cut over |
 | Profile + notifications | `GET /api/profile`, `GET /api/notifications` | Implemented in source | Read parity/E2E unverified |
 | Orders + catalog | `GET /api/orders`, `GET /api/catalog` | Implemented in source | Read parity/E2E unverified |
@@ -101,4 +115,4 @@ For each route before declaring it migrated:
 5. Do not migrate wallet, payment, VTU purchase, banking transfer, or other financial writes until a separate reviewed implementation passes idempotency, atomicity, race, reconciliation, audit, and failure-path tests.
 6. Record the staged health response, deployed commit SHA, API build/typecheck output, browser E2E output, and rollback evidence before claiming the migration is verified.
 
-The staged health URL could not be fetched through the available inspection path (the request returned a tooling `DisabledError`, not an HTTP status from the service). This is an access limitation and must not be reported as either a healthy or unhealthy endpoint.
+The health URL was not independently fetched through the inspection path (the request returned a tooling `DisabledError`, not an HTTP status from the service). The owner-supplied response above is recorded as external staging evidence; it should not be described as independently reproduced by this audit.
