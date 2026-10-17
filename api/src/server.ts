@@ -294,6 +294,46 @@ app.get("/api/orders", auth, async (c) => {
   return c.json({ orders: result.rows });
 });
 
+// Read-only shipment endpoints are the first logistics migration slice.
+// Mutations stay disabled until shipment creation and event integrity are covered by tests.
+app.get("/api/shipments", auth, async (c) => {
+  const limit = parseLimit(c.req.query("limit"));
+  const status = c.req.query("status")?.trim();
+  if (status && !["pending", "picked_up", "in_transit", "out_for_delivery", "delivered", "failed", "cancelled"].includes(status)) {
+    return fail(c, 400, "Invalid shipment status");
+  }
+  const values: unknown[] = [c.get("user").id, limit];
+  let where = "user_id=$1";
+  if (c.get("user").role === "admin" && c.req.query("all") === "true") where = "TRUE";
+  if (status) {
+    values.push(status);
+    where += ` AND status=${values.length}`;
+  }
+  const result = await pool.query(
+    `SELECT id,tracking_number,status,sender_name,sender_city,sender_state,sender_country,
+            recipient_name,recipient_city,recipient_state,recipient_country,package_description,
+            weight,service_type,estimated_delivery,created_at,updated_at
+     FROM shipments WHERE ${where} ORDER BY created_at DESC LIMIT $2`,
+    values,
+  );
+  return c.json({ shipments: result.rows });
+});
+
+app.get("/api/shipments/:id", auth, async (c) => {
+  const id = c.req.param("id").trim();
+  if (!id || id.length > 128) return fail(c, 400, "Invalid shipment id");
+  const result = c.get("user").role === "admin"
+    ? await pool.query("SELECT * FROM shipments WHERE id=$1 OR tracking_number=$1 LIMIT 1", [id])
+    : await pool.query("SELECT * FROM shipments WHERE user_id=$1 AND (id=$2 OR tracking_number=$2) LIMIT 1", [c.get("user").id, id]);
+  const shipment = result.rows[0];
+  if (!shipment) return fail(c, 404, "Shipment not found");
+  const events = await pool.query(
+    "SELECT id,status,location,description,metadata,occurred_at FROM shipment_events WHERE shipment_id=$1 ORDER BY occurred_at ASC",
+    [shipment.id],
+  );
+  return c.json({ shipment, events: events.rows });
+});
+
 app.get("/api/catalog", auth, async (c) => {
   const limit = parseLimit(c.req.query("limit"));
   const tenantId = c.req.query("tenantId")?.trim();
