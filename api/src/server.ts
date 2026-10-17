@@ -172,8 +172,40 @@ app.get("/api/auth/csrf", (c) => {
 
 app.get("/health", async (c) => {
   try {
-    const result = await pool.query("SELECT 1 AS ok");
-    return c.json({ ok: result.rows[0]?.ok === 1, service: "cloudie-neon-api", database: "connected", timestamp: new Date().toISOString() });
+    const requiredTables = [
+      "app_users", "api_sessions", "tenant_sites", "tenant_users",
+      "wallet_ledger", "catalog_products", "commerce_orders", "user_notifications",
+    ];
+    const result = await pool.query<{ ok: number; missing_tables: string[] }>(
+      `WITH required(table_name) AS (SELECT unnest($1::text[]))
+       SELECT 1 AS ok,
+         COALESCE(
+           array_agg(required.table_name) FILTER (WHERE actual.table_name IS NULL),
+           ARRAY[]::text[]
+         ) AS missing_tables
+       FROM required
+       LEFT JOIN information_schema.tables actual
+         ON actual.table_schema='public' AND actual.table_name=required.table_name`,
+      [requiredTables],
+    );
+    const timestamp = new Date().toISOString();
+    if (result.rows[0]?.missing_tables?.length) {
+      return c.json({
+        ok: false,
+        service: "cloudie-neon-api",
+        database: "connected",
+        schema: "incomplete",
+        missingTables: result.rows[0].missing_tables,
+        timestamp,
+      }, 503);
+    }
+    return c.json({
+      ok: result.rows[0]?.ok === 1,
+      service: "cloudie-neon-api",
+      database: "connected",
+      schema: "ready",
+      timestamp,
+    });
   } catch {
     return c.json({ ok: false, service: "cloudie-neon-api", database: "unavailable" }, 503);
   }
