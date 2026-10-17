@@ -1,5 +1,4 @@
-const DEFAULT_API_URL = "https://cloudie-operations-api-stage.onrender.com";
-const API_BASE_URL = (import.meta.env.VITE_NEON_API_URL as string | undefined)?.replace(/\/$/, "") || DEFAULT_API_URL;
+const API_BASE_URL = ((import.meta.env.VITE_NEON_API_URL as string | undefined) ?? "").replace(/\/$/, "");
 const SAME_ORIGIN_API = import.meta.env.VITE_NEON_API_SAME_ORIGIN === "true";
 const COOKIE_ONLY_SESSIONS = import.meta.env.VITE_NEON_COOKIE_ONLY === "true";
 
@@ -36,6 +35,7 @@ export class NeonApiError extends Error {
 function baseUrl() {
   if (COOKIE_ONLY_SESSIONS && !SAME_ORIGIN_API) throw new Error("Cookie-only sessions require the same-origin API gateway.");
   if (SAME_ORIGIN_API) return "";
+  if (!API_BASE_URL) throw new Error("Neon API is not configured. Set VITE_NEON_API_URL or enable the same-origin API gateway.");
   return API_BASE_URL;
 }
 
@@ -170,7 +170,7 @@ export const neonApi = {
     const query = new URLSearchParams();
     query.set("limit", String(Math.min(100, Math.max(1, Math.floor(input.limit ?? 50)))));
     if (input.tenantId) query.set("tenantId", input.tenantId);
-    return request<{ products: Array<Record<string, unknown>> }>(`/api/catalog?${query.toString()}`, {}, false);
+    return request<{ products: Array<Record<string, unknown>> }>(`/api/catalog?${query.toString()}`);
   },
   async orders(limit = 50) {
     return request<{ orders: Array<Record<string, unknown>> }>(`/api/orders?limit=${Math.min(100, Math.max(1, Math.floor(limit)))}`);
