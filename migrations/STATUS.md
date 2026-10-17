@@ -10,6 +10,7 @@ Last updated: 2026-10-17
 - `005_financial_integrity.sql`: deferred double-entry balance checks per currency, entry-to-group currency and tenant consistency, and immutability for posted ledger groups; applied and revalidated on the isolated Neon test branch.
 - `migrations/tests/005_financial_integrity_test.sql`: rollback-only behavior test for balanced posting, rejection of an unbalanced posting, posted-entry update/insert immutability, and rejection of entries whose currency differs from the ledger-group currency.
 - `api/src/server.ts`: initial Hono/Node API with health, registration/login/logout, current-user, tenant listing, admin user listing, and read-only wallet ledger endpoints.
+- `api/scripts/migrate.mjs` and `npm run migrate`: ordered SQL migration runner with a PostgreSQL advisory lock, SHA-256 checksums, applied-version tracking, and explicit safety warnings.
 - `api/package.json`, `api/tsconfig.json`, `api/.env.example`, `api/README.md`: API runtime configuration and operator instructions.
 - `api/scripts/smoke.mjs`: HTTP smoke checks for health and protected endpoints.
 - `render.yaml`: Render Blueprint for hosting the separate Node API.

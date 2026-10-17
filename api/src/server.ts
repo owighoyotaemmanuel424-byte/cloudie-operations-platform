@@ -180,6 +180,43 @@ app.get("/health", async (c) => {
 });
 app.get("/api/health", (c) => c.redirect("/health", 307));
 
+// Public, non-secret platform configuration. Never return provider keys, internal
+// infrastructure details, or admin-only settings from this endpoint.
+const publicConfigDefaults = {
+  platformName: "Cloudie",
+  tagline: "Operations, commerce and logistics in one place",
+  supportEmail: "",
+  supportUrl: "",
+  logoUrl: "",
+  maintenanceMode: false,
+};
+app.get("/api/public-config", async (c) => {
+  try {
+    const result = await pool.query<{ value: unknown }>(
+      "SELECT value FROM platform_settings WHERE key = $1 LIMIT 1",
+      ["public_config"],
+    );
+    const stored = result.rows[0]?.value;
+    const config = stored && typeof stored === "object" && !Array.isArray(stored)
+      ? stored as Record<string, unknown>
+      : {};
+    const safe = {
+      platformName: typeof config.platformName === "string" ? config.platformName.slice(0, 80) : publicConfigDefaults.platformName,
+      tagline: typeof config.tagline === "string" ? config.tagline.slice(0, 180) : publicConfigDefaults.tagline,
+      supportEmail: typeof config.supportEmail === "string" ? config.supportEmail.slice(0, 254) : "",
+      supportUrl: typeof config.supportUrl === "string" && /^https?:\/\//i.test(config.supportUrl) ? config.supportUrl.slice(0, 500) : "",
+      logoUrl: typeof config.logoUrl === "string" && (/^https?:\/\//i.test(config.logoUrl) || config.logoUrl.startsWith("/")) ? config.logoUrl.slice(0, 500) : "",
+      maintenanceMode: config.maintenanceMode === true,
+    };
+    return c.json({ config: safe, source: result.rowCount ? "database" : "defaults" });
+  } catch (error) {
+    console.error("Public config query failed", error instanceof Error ? error.message : "unknown");
+    // Keep the public landing shell available during a settings-table outage.
+    return c.json({ config: publicConfigDefaults, source: "fallback" });
+  }
+});
+
+
 /**
  * Registration creates ordinary users only. It deliberately does not accept a role,
  * tenant, wallet balance, or admin flag from the client.
@@ -294,6 +331,46 @@ app.get("/api/orders", auth, async (c) => {
   return c.json({ orders: result.rows });
 });
 
+// Read-only shipment endpoints are the first logistics migration slice.
+// Mutations stay disabled until shipment creation and event integrity are covered by tests.
+app.get("/api/shipments", auth, async (c) => {
+  const limit = parseLimit(c.req.query("limit"));
+  const status = c.req.query("status")?.trim().toLowerCase();
+  if (status && !["pending", "picked_up", "in_transit", "out_for_delivery", "delivered", "failed", "cancelled"].includes(status)) {
+    return fail(c, 400, "Invalid shipment status");
+  }
+  const values: unknown[] = [c.get("user").id, limit];
+  let where = "user_id=$1";
+  if (c.get("user").role === "admin" && c.req.query("all") === "true") where = "TRUE";
+  if (status) {
+    values.push(status);
+    where += ` AND status=$${values.length}`;
+  }
+  const result = await pool.query(
+    `SELECT id,tracking_number,status,sender_name,sender_city,sender_state,sender_country,
+            recipient_name,recipient_city,recipient_state,recipient_country,package_description,
+            weight,service_type,estimated_delivery,created_at,updated_at
+     FROM shipments WHERE ${where} ORDER BY created_at DESC LIMIT $2`,
+    values,
+  );
+  return c.json({ shipments: result.rows });
+});
+
+app.get("/api/shipments/:id", auth, async (c) => {
+  const id = c.req.param("id").trim();
+  if (!id || id.length > 128) return fail(c, 400, "Invalid shipment id");
+  const result = c.get("user").role === "admin"
+    ? await pool.query("SELECT * FROM shipments WHERE id=$1 OR tracking_number=$1 LIMIT 1", [id])
+    : await pool.query("SELECT * FROM shipments WHERE user_id=$1 AND (id=$2 OR tracking_number=$2) LIMIT 1", [c.get("user").id, id]);
+  const shipment = result.rows[0];
+  if (!shipment) return fail(c, 404, "Shipment not found");
+  const events = await pool.query(
+    "SELECT id,status,location,description,metadata,occurred_at FROM shipment_events WHERE shipment_id=$1 ORDER BY occurred_at ASC",
+    [shipment.id],
+  );
+  return c.json({ shipment, events: events.rows });
+});
+
 app.get("/api/catalog", auth, async (c) => {
   const limit = parseLimit(c.req.query("limit"));
   const tenantId = c.req.query("tenantId")?.trim();
@@ -324,6 +401,27 @@ app.get("/api/admin/users", auth, adminOnly, async (c) => {
   );
   return c.json({ users: result.rows });
 });
+app.get("/api/wallet/summary", auth, async (c) => {
+  const userId = c.get("user").id;
+  const [account, totals] = await Promise.all([
+    pool.query("SELECT wallet_balance_ngn FROM app_users WHERE id=$1", [userId]),
+    pool.query(
+      `SELECT COALESCE(SUM(CASE WHEN amount_ngn > 0 THEN amount_ngn ELSE 0 END),0) AS total_credits_ngn,
+              COALESCE(SUM(CASE WHEN amount_ngn < 0 THEN ABS(amount_ngn) ELSE 0 END),0) AS total_debits_ngn,
+              COUNT(*)::int AS entry_count
+       FROM wallet_ledger WHERE user_id=$1`,
+      [userId],
+    ),
+  ]);
+  if (!account.rows[0]) return fail(c, 404, "Wallet account not found");
+  return c.json({
+    balanceNgn: account.rows[0].wallet_balance_ngn,
+    totalCreditsNgn: totals.rows[0]?.total_credits_ngn ?? "0",
+    totalDebitsNgn: totals.rows[0]?.total_debits_ngn ?? "0",
+    entryCount: totals.rows[0]?.entry_count ?? 0,
+  });
+});
+
 app.get("/api/wallet/ledger", auth, async (c) => {
   const limit = parseLimit(c.req.query("limit"));
   const result = await pool.query(

@@ -39,6 +39,8 @@ function readCsrfCookie() {
 }
 
 export function getNeonToken() {
+  // Same-origin gateway deployments must use the HttpOnly cookie only.
+  if (SAME_ORIGIN_API) return null;
   try { return window.sessionStorage.getItem(TOKEN_KEY); } catch { return null; }
 }
 
@@ -51,7 +53,8 @@ export function getCachedNeonUser(): NeonUser | null {
 
 function saveSession(session: NeonSession) {
   try {
-    if (session.token) window.sessionStorage.setItem(TOKEN_KEY, session.token);
+    if (session.token && !SAME_ORIGIN_API) window.sessionStorage.setItem(TOKEN_KEY, session.token);
+    else window.sessionStorage.removeItem(TOKEN_KEY);
     window.sessionStorage.setItem(USER_KEY, JSON.stringify(session.user));
   } catch {
     throw new Error("Your browser blocked session storage. Enable site storage and try again.");
@@ -65,12 +68,26 @@ export function clearNeonSession() {
   } catch { /* storage may be unavailable */ }
 }
 
+async function ensureCsrfCookie() {
+  if (!SAME_ORIGIN_API || readCsrfCookie()) return;
+  const response = await fetch(`${baseUrl()}/api/auth/csrf`, {
+    method: "GET",
+    credentials: "include",
+    cache: "no-store",
+    headers: { Accept: "application/json" },
+  });
+  if (!response.ok) throw new NeonApiError("Unable to initialize secure session. Please retry.", response.status);
+}
+
 async function request<T>(path: string, init: RequestInit = {}, authenticated = true): Promise<T> {
+  const method = (init.method ?? "GET").toUpperCase();
+  if (["POST", "PUT", "PATCH", "DELETE"].includes(method)) await ensureCsrfCookie();
   const headers = new Headers(init.headers);
   if (init.body && !headers.has("Content-Type")) headers.set("Content-Type", "application/json");
-  const token = authenticated ? getNeonToken() : null;
+  // Same-origin mode uses the HttpOnly cookie as the only credential.
+  const token = authenticated && !SAME_ORIGIN_API ? getNeonToken() : null;
   if (token) headers.set("Authorization", `Bearer ${token}`);
-  if (["POST", "PUT", "PATCH", "DELETE"].includes((init.method ?? "GET").toUpperCase())) {
+  if (["POST", "PUT", "PATCH", "DELETE"].includes(method)) {
     const csrfToken = readCsrfCookie();
     if (csrfToken) headers.set("X-CSRF-Token", csrfToken);
   }
@@ -86,6 +103,9 @@ async function request<T>(path: string, init: RequestInit = {}, authenticated = 
 }
 
 export const neonApi = {
+  async publicConfig() {
+    return request<{ config: { platformName: string; tagline: string; supportEmail: string; supportUrl: string; logoUrl: string; maintenanceMode: boolean }; source: string }>("/api/public-config", {}, false);
+  },
   async register(input: { name: string; email: string; password: string }) {
     const result = await request<NeonSession>("/api/auth/register", { method: "POST", body: JSON.stringify(input) }, false);
     saveSession(result);
@@ -111,6 +131,9 @@ export const neonApi = {
   async adminUsers(limit = 50) {
     return request<{ users: Array<Record<string, unknown>> }>(`/api/admin/users?limit=${Math.min(100, Math.max(1, Math.floor(limit)))}`);
   },
+  async walletSummary() {
+    return request<{ balanceNgn: string; totalCreditsNgn: string; totalDebitsNgn: string; entryCount: number }>("/api/wallet/summary");
+  },
   async walletLedger(limit = 50) {
     return request<{ entries: Array<Record<string, unknown>> }>(`/api/wallet/ledger?limit=${Math.min(100, Math.max(1, Math.floor(limit)))}`);
   },
@@ -122,6 +145,17 @@ export const neonApi = {
   },
   async orders(limit = 50) {
     return request<{ orders: Array<Record<string, unknown>> }>(`/api/orders?limit=${Math.min(100, Math.max(1, Math.floor(limit)))}`);
+  },
+  async shipments(input: { status?: string; all?: boolean; limit?: number } = {}) {
+    const query = new URLSearchParams();
+    query.set("limit", String(Math.min(100, Math.max(1, Math.floor(input.limit ?? 50)))));
+    if (input.status) query.set("status", input.status);
+    if (input.all) query.set("all", "true");
+    return request<{ shipments: Array<Record<string, unknown>> }>(`/api/shipments?${query.toString()}`);
+  },
+  async shipment(id: string) {
+    if (!id.trim() || id.length > 128) throw new Error("Invalid shipment identifier");
+    return request<{ shipment: Record<string, unknown>; events: Array<Record<string, unknown>> }>(`/api/shipments/${encodeURIComponent(id)}`);
   },
   async catalog(input: { tenantId?: string; limit?: number } = {}) {
     const query = new URLSearchParams();
