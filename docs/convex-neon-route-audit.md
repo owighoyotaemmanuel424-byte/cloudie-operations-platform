@@ -94,11 +94,11 @@ The project owner supplied this live staging response at `2026-10-17T11:41:46.71
 }
 ```
 
-This is evidence that the deployed staging API returned healthy and could reach Neon at that timestamp. The response alone does not identify the deployed commit or validate auth, browser cookies, authorization, route parity, or financial workflows.
+This is evidence that the deployed staging API returned healthy and could reach its configured PostgreSQL database at that timestamp. The response does not independently prove the database provider is Neon, identify the deployed commit, or validate auth, browser cookies, authorization, route parity, or financial workflows.
 
 | Capability | Neon source endpoint | Evidence level | Safe status |
 |---|---|---|---|
-| Health + DB connectivity | `GET /health` | Live response supplied by project owner at the timestamp above; deployed commit SHA still not correlated | Staging health confirmed at that timestamp; repeat after deployment and record deployed SHA |
+| Health + DB connectivity | `GET /health` | Live response supplied by project owner; confirms configured PostgreSQL connectivity at the timestamp above, but not provider identity; deployed commit SHA still not correlated | Staging health confirmed at that timestamp; repeat after deployment and record deployed SHA |
 | Register/login/logout/current user | `/api/auth/*`, `GET /api/me` | Implemented in source; cookie-only browser flow not verified | Do not cut over |
 | Profile + notifications | `GET /api/profile`, `GET /api/notifications` | Implemented in source | Read parity/E2E unverified |
 | Orders + catalog | `GET /api/orders`, `GET /api/catalog` | Implemented in source | Read parity/E2E unverified |
