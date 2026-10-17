@@ -366,3 +366,51 @@ test("wallet summary returns only the authenticated user's balance and ledger to
     mutablePool.query = originalQuery;
   }
 });
+
+
+test("wallet ledger is scoped to the authenticated user and bounds the requested page size", async () => {
+  const secret = new TextEncoder().encode(process.env.JWT_SECRET);
+  const token = await new SignJWT({ email: "user@example.com", role: "user" })
+    .setProtectedHeader({ alg: "HS256" })
+    .setSubject("wallet-ledger-user")
+    .setJti("wallet-ledger-session")
+    .setIssuedAt()
+    .setIssuer("cloudie-neon-api")
+    .setAudience("cloudie-web")
+    .setExpirationTime("5m")
+    .sign(secret);
+  const mutablePool = pool as unknown as { query: (...args: unknown[]) => Promise<unknown> };
+  const originalQuery = mutablePool.query;
+  let ledgerQuery: { sql: string; values: unknown[] } | undefined;
+  mutablePool.query = async (...args: unknown[]) => {
+    const sql = String(args[0] ?? "");
+    if (sql.includes("FROM api_sessions")) return { rows: [{ id: "wallet-ledger-session" }], rowCount: 1 };
+    if (sql.includes("FROM app_users")) return {
+      rows: [{ id: "wallet-ledger-user", email: "user@example.com", name: "Test User", role: "user", is_suspended: false, is_terminated: false }],
+      rowCount: 1,
+    };
+    if (sql.includes("FROM wallet_ledger")) {
+      ledgerQuery = { sql, values: args[1] as unknown[] };
+      return { rows: [{ id: "entry-1", amount_ngn: "25.00", transaction_type: "deposit" }], rowCount: 1 };
+    }
+    throw new Error("Unexpected database query in wallet ledger test");
+  };
+  try {
+    const response = await app.request("/api/wallet/ledger?limit=999", {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    assert.equal(response.status, 200);
+    assert.equal((await response.json() as { entries: unknown[] }).entries.length, 1);
+    assert.match(ledgerQuery?.sql ?? "", /WHERE user_id=\$1/);
+    assert.match(ledgerQuery?.sql ?? "", /LIMIT \$2/);
+    assert.deepEqual(ledgerQuery?.values, ["wallet-ledger-user", 100]);
+  } finally {
+    mutablePool.query = originalQuery;
+  }
+});
+
+test("wallet ledger rejects unauthenticated requests before database access", async () => {
+  const response = await app.request("/api/wallet/ledger?limit=10");
+  assert.equal(response.status, 401);
+  assert.deepEqual(await response.json(), { error: "Authentication required" });
+});
