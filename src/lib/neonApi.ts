@@ -127,6 +127,17 @@ export const neonApi = {
   async orders(limit = 50) {
     return request<{ orders: Array<Record<string, unknown>> }>(`/api/orders?limit=${Math.min(100, Math.max(1, Math.floor(limit)))}`);
   },
+  async shipments(input: { status?: string; all?: boolean; limit?: number } = {}) {
+    const query = new URLSearchParams();
+    query.set("limit", String(Math.min(100, Math.max(1, Math.floor(input.limit ?? 50)))));
+    if (input.status) query.set("status", input.status);
+    if (input.all) query.set("all", "true");
+    return request<{ shipments: Array<Record<string, unknown>> }>(`/api/shipments?${query.toString()}`);
+  },
+  async shipment(id: string) {
+    if (!id.trim() || id.length > 128) throw new Error("Invalid shipment identifier");
+    return request<{ shipment: Record<string, unknown>; events: Array<Record<string, unknown>> }>(`/api/shipments/${encodeURIComponent(id)}`);
+  },
   async catalog(input: { tenantId?: string; limit?: number } = {}) {
     const query = new URLSearchParams();
     query.set("limit", String(Math.min(100, Math.max(1, Math.floor(input.limit ?? 50)))));
