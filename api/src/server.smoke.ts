@@ -182,7 +182,7 @@ test("reports database connectivity and required schema readiness separately", a
     assert.equal(body.service, "cloudie-neon-api");
     assert.equal(body.database, "connected");
     assert.equal(body.schema, "ready");
-    assert.match(body.timestamp, /^\\d{4}-\\d{2}-\\d{2}T/);
+    assert.match(body.timestamp, /^\d{4}-\d{2}-\d{2}T/);
   } finally {
     mutablePool.query = originalQuery;
   }
