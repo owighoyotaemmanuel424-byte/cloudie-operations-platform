@@ -66,3 +66,39 @@ For each route before declaring it migrated:
 - No credential hash copying until source hash compatibility and identity ownership are verified. Prefer linked Convex identity or verified account recovery; preserve existing credentials and identities.
 - No financial writes until authorization, atomicity, concurrency, idempotency, reconciliation, audit controls, retries, races, partial failure, and unauthorized-access tests all pass.
 - Do not call this inventory exhaustive at the function-call level until the query/mutation trace is completed for each listed screen.
+
+
+## Follow-up verification (source inspection, 2026-10-17)
+
+### Confirmed implementation details
+
+- `src/main.tsx` still constructs `ConvexReactClient` from `VITE_CONVEX_URL` and wraps the application with `ConvexAuthProvider`. The incremental `useNeonAuth` hook is explicitly separate from `use-auth`; it is not a replacement for the production auth provider.
+- `src/lib/neonApi.ts` uses `VITE_NEON_API_URL`, sends `Authorization: Bearer` from `sessionStorage`, and includes credentials. This is not the required same-origin, cookie-only browser session architecture.
+- `api/src/server.ts` stores an 8-hour session record and JWT in an HttpOnly cookie, checks active/revoked session records on authenticated requests, and clears/revokes sessions on logout. However, register/login also return the JWT in JSON. That token response plus the frontend bearer-token storage must be removed as part of a coordinated cookie-only cutover, not as an isolated change.
+- API cookie configuration is `SameSite=Lax`; the app and API are currently configured as separate origins. Do not assume this cookie will be sent reliably from the deployed frontend to a cross-site Render API. The same-origin gateway must be deployed and tested first.
+- `vercel.json` currently rewrites unmatched paths to `/index.html`; it does not define an API proxy route. A proxy must be designed so API routes are not swallowed by the SPA rewrite and must use a server-side environment variable for the upstream origin (never expose the upstream secret/config as a client-side variable).
+- `api/package.json` defines build and typecheck scripts but no API test script. An API-focused test harness and explicit auth/session tests are required before the session cutover.
+- `api/src/server.ts` exposes read-only API endpoints for profile, notifications, orders, catalog, tenants, admin users, and wallet ledger. This does not establish parity for the corresponding Convex queries, subscriptions, mutations, or authorization rules.
+
+### Current route-level status
+
+| Capability | Neon source endpoint | Evidence level | Safe status |
+|---|---|---|---|
+| Health + DB connectivity | `GET /health` | Implemented in source; live staged response unavailable to this audit | Unverified until deployment/HTTP evidence is recorded |
+| Register/login/logout/current user | `/api/auth/*`, `GET /api/me` | Implemented in source; cookie-only browser flow not verified | Do not cut over |
+| Profile + notifications | `GET /api/profile`, `GET /api/notifications` | Implemented in source | Read parity/E2E unverified |
+| Orders + catalog | `GET /api/orders`, `GET /api/catalog` | Implemented in source | Read parity/E2E unverified |
+| Admin user list | `GET /api/admin/users` | Implemented in source with admin role middleware | Screen parity/authorization E2E unverified |
+| Wallet ledger | `GET /api/wallet/ledger` | Implemented in source; read-only | Reconciliation/parity unverified; no financial writes enabled |
+| All remaining route families | No complete endpoint mapping established | Not audited at function-call level | Keep Convex fallback |
+
+### Required implementation order
+
+1. Add and test a same-origin HTTPS API gateway without changing the current production auth provider.
+2. Add API tests for cookie flags, CSRF/Origin rejection, expired/revoked sessions, disabled accounts, logout, login/register token leakage, and authorization boundaries.
+3. Change API auth responses and frontend client together to cookie-only sessions; remove token storage and bearer fallback only after gateway/E2E tests pass.
+4. Migrate one read-only route at a time and document exact Convex functions, ownership/tenant rules, schema mapping, parity tests, and rollback.
+5. Do not migrate wallet, payment, VTU purchase, banking transfer, or other financial writes until a separate reviewed implementation passes idempotency, atomicity, race, reconciliation, audit, and failure-path tests.
+6. Record the staged health response, deployed commit SHA, API build/typecheck output, browser E2E output, and rollback evidence before claiming the migration is verified.
+
+The staged health URL could not be fetched through the available inspection path (the request returned a tooling `DisabledError`, not an HTTP status from the service). This is an access limitation and must not be reported as either a healthy or unhealthy endpoint.
