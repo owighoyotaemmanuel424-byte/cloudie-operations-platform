@@ -103,4 +103,19 @@ export const neonApi = {
   async walletLedger(limit = 50) {
     return request<{ entries: Array<Record<string, unknown>> }>(`/api/wallet/ledger?limit=${Math.min(100, Math.max(1, Math.floor(limit)))}`);
   },
+  async profile() {
+    return request<{ profile: Record<string, unknown> }>("/api/profile");
+  },
+  async notifications(limit = 50) {
+    return request<{ notifications: Array<Record<string, unknown>> }>(`/api/notifications?limit=${Math.min(100, Math.max(1, Math.floor(limit)))}`);
+  },
+  async orders(limit = 50) {
+    return request<{ orders: Array<Record<string, unknown>> }>(`/api/orders?limit=${Math.min(100, Math.max(1, Math.floor(limit)))}`);
+  },
+  async catalog(input: { tenantId?: string; limit?: number } = {}) {
+    const query = new URLSearchParams();
+    query.set("limit", String(Math.min(100, Math.max(1, Math.floor(input.limit ?? 50)))));
+    if (input.tenantId) query.set("tenantId", input.tenantId);
+    return request<{ products: Array<Record<string, unknown>> }>(`/api/catalog?${query.toString()}`);
+  },
 };
