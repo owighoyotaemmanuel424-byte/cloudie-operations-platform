@@ -307,7 +307,7 @@ app.get("/api/shipments", auth, async (c) => {
   if (c.get("user").role === "admin" && c.req.query("all") === "true") where = "TRUE";
   if (status) {
     values.push(status);
-    where += ` AND status=${values.length}`;
+    where += ` AND status=$${values.length}`;
   }
   const result = await pool.query(
     `SELECT id,tracking_number,status,sender_name,sender_city,sender_state,sender_country,
