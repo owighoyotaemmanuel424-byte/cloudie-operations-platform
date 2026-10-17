@@ -168,6 +168,42 @@ test("rejects malformed registration and login payloads before database access",
   assert.equal(login.status, 400);
 });
 
+test("reports database connectivity and required schema readiness separately", async () => {
+  const mutablePool = pool as unknown as { query: (...args: unknown[]) => Promise<unknown> };
+  const originalQuery = mutablePool.query;
+  mutablePool.query = async () => ({ rows: [{ ok: 1, missing_tables: [] }], rowCount: 1 });
+  try {
+    const response = await app.request("/health");
+    assert.equal(response.status, 200);
+    assert.deepEqual(await response.json(), {
+      ok: true,
+      service: "cloudie-neon-api",
+      database: "connected",
+      schema: "ready",
+      timestamp: (await response.clone().json()).timestamp,
+    });
+  } finally {
+    mutablePool.query = originalQuery;
+  }
+});
+
+test("reports schema-incomplete databases as unhealthy", async () => {
+  const mutablePool = pool as unknown as { query: (...args: unknown[]) => Promise<unknown> };
+  const originalQuery = mutablePool.query;
+  mutablePool.query = async () => ({ rows: [{ ok: 1, missing_tables: ["api_sessions"] }], rowCount: 1 });
+  try {
+    const response = await app.request("/health");
+    assert.equal(response.status, 503);
+    const body = await response.json() as { ok: boolean; database: string; schema: string; missingTables: string[] };
+    assert.equal(body.ok, false);
+    assert.equal(body.database, "connected");
+    assert.equal(body.schema, "incomplete");
+    assert.deepEqual(body.missingTables, ["api_sessions"]);
+  } finally {
+    mutablePool.query = originalQuery;
+  }
+});
+
 test("returns 503 when the configured PostgreSQL database is unavailable", async () => {
   const mutablePool = pool as unknown as { query: (...args: unknown[]) => Promise<unknown> };
   const originalQuery = mutablePool.query;
