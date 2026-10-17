@@ -14,10 +14,14 @@ Target: static Vite/React frontend on InfinityFree, Node API on Render, PostgreS
 
 ## Current implementation checkpoint (2026-10-17)
 - API changes are committed to this migration branch; no production cutover has occurred.
-- Neon API CI and the root CI job passed for commit `44df9e5` (wallet summary and shipment read endpoints).
-- Wallet summary and ledger are read-only; the ledger endpoint has user scoping and a capped page size. Additional tests now cover ledger authorization and pagination; their CI run is pending.
+- The repository PR head last observed by the connected GitHub integration is `03f62a95257c2df5eaa4ca677190c76f16e66065`.
+- The user's latest message reports fixes to platform configuration sanitization, auth action signatures, and legacy/Neon email-verification compatibility, plus 547 passing tests. Those exact changes and test results are **not yet verifiable on the observed PR head**; they must be pushed to the migration branch and CI must run against that commit before they are treated as verified.
+- CI status observed for the PR head: CodeRabbit success; Vercel check failure caused by the account's deployment-rate limit. This is not a successful preview deployment.
+- Render staging service `cloudie-operations-api-stage` is configured to deploy branch `main`, not this migration branch. Its most recent observed live commit is `368b831dbe8e1bcf953acb8a703cad61afe88594`; this does not include PR #15's later changes.
+- Neon project `weathered-pond-36240742`: the isolated `cloudie-neon-migration-test` branch contains the migration tables, while the `production` branch's table-list query returned no tables. Confirm the intended production database/branch and apply reviewed migrations only after that identity is confirmed. Do not assume test-branch schema proves production readiness.
+- Wallet summary and ledger are read-only; the ledger endpoint has user scoping and capped pagination. Shipment listing/tracking are read-only.
 - Shipment creation/update and financial writes remain intentionally unavailable in the new API until authorization, transaction integrity, and idempotency tests exist.
-- No frontend cutover, data import, Render deployment, or InfinityFree upload has occurred.
+- No frontend cutover, data import, Render deployment of the PR branch, or final InfinityFree upload has been verified.
 
 ## Required migration slices
 1. **Foundation and auth:** schema parity, registration/login/logout, session refresh, password reset/email verification, controlled initial admin bootstrap, role checks, tenant membership, CSRF/rate limiting, and tests.
@@ -27,7 +31,7 @@ Target: static Vite/React frontend on InfinityFree, Node API on Render, PostgreS
 5. **Frontend adapter migration:** replace every `useQuery`, `useMutation`, `useAction`, Convex auth hook, generated API import, upload/storage path, and realtime subscription with tested API calls or explicit polling/SSE where needed.
 6. **Data migration:** export from the source system, transform into Neon, preserve IDs/relationships and ledger history, reconcile counts and balances, rehearse rollback.
 7. **Cutover and removal:** switch environment configuration only after staging acceptance; build and smoke-test the InfinityFree artifact; remove Convex packages, generated files, deployment config, and environment variables; verify no Convex imports remain.
-8. **Deployment:** deploy API to Render with production Neon URL and secrets configured in the dashboard; apply reviewed migrations; verify health/auth/authorization; build static files and upload to InfinityFree.
+8. **Deployment:** deploy API to Render with the intended Neon URL and secrets configured in the dashboard; apply reviewed migrations; verify health/auth/authorization; build static files and upload to InfinityFree.
 
 ## Safety gates
 - Never put database URLs, JWT secrets, provider credentials, or admin bootstrap secrets in `VITE_*` variables.
