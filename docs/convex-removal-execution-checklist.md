@@ -14,9 +14,10 @@ Target: static Vite/React frontend on InfinityFree, Node API on Render, PostgreS
 
 ## Current implementation checkpoint (2026-10-17)
 - API changes are committed to this migration branch; no production cutover has occurred.
-- The Neon API CI workflow passed for the previous checkpoint; the latest wallet-summary changes are awaiting their own CI run.
+- Neon API CI and the root CI job passed for commit `44df9e5` (wallet summary and shipment read endpoints).
+- Wallet summary and ledger are read-only; the ledger endpoint has user scoping and a capped page size. Additional tests now cover ledger authorization and pagination; their CI run is pending.
 - Shipment creation/update and financial writes remain intentionally unavailable in the new API until authorization, transaction integrity, and idempotency tests exist.
-- CI/build/test execution must be confirmed before treating this slice as verified.
+- No frontend cutover, data import, Render deployment, or InfinityFree upload has occurred.
 
 ## Required migration slices
 1. **Foundation and auth:** schema parity, registration/login/logout, session refresh, password reset/email verification, controlled initial admin bootstrap, role checks, tenant membership, CSRF/rate limiting, and tests.
