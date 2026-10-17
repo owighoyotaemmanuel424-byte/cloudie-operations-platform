@@ -5,7 +5,7 @@ This is a separate Node.js API service for a gradual Convex-to-Neon migration. I
 ## Local development
 1. Use Node.js 20+.
 2. Copy `.env.example` to `.env`; use a **test** Neon branch URL, a random `JWT_SECRET` (32+ bytes), and explicit `CORS_ORIGINS`.
-3. Apply `../migrations/001_foundation.sql`, `002_tenant_banking.sql`, `003_core_services.sql`, `004_auth_fields.sql`, and `005_financial_integrity.sql` to the test branch.
+3. Set `DATABASE_URL` to a **disposable/test Neon branch** and run `npm run migrate`. The runner applies the reviewed SQL files in order, records SHA-256 checksums, skips already-applied matching files, and stops if an applied migration's contents changed. Never point this at production without a reviewed rollout and backup.
 4. Run `npm install`, `npm run build`, then `npm start` (or `npm run dev`).
 5. Run smoke checks with `API_BASE_URL=http://localhost:8787 node scripts/smoke.mjs`. The smoke script verifies database health, unauthenticated access rejection for protected routes, and rejection of invalid registration input.
 
