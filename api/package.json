@@ -11,7 +11,7 @@
     "start": "node dist/server.js",
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc --noEmit -p tsconfig.json",
-    "test": "node --import tsx --test src/server.test.ts"
+    "test": "node --import tsx --test src/server.smoke.ts"
   },
   "dependencies": {
     "@hono/node-server": "^1.19.5",
