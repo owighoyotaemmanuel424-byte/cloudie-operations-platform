@@ -115,6 +115,9 @@ export const neonApi = {
   async adminUsers(limit = 50) {
     return request<{ users: Array<Record<string, unknown>> }>(`/api/admin/users?limit=${Math.min(100, Math.max(1, Math.floor(limit)))}`);
   },
+  async walletSummary() {
+    return request<{ balanceNgn: string; totalCreditsNgn: string; totalDebitsNgn: string; entryCount: number }>("/api/wallet/summary");
+  },
   async walletLedger(limit = 50) {
     return request<{ entries: Array<Record<string, unknown>> }>(`/api/wallet/ledger?limit=${Math.min(100, Math.max(1, Math.floor(limit)))}`);
   },
