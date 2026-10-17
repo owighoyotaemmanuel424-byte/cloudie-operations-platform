@@ -21,23 +21,27 @@ export function usePlatformConfig(): {
   loaded: boolean;
 } {
   const [brand, setBrand] = useState<BrandConfig>(DEFAULT_BRAND);
-  const [support] = useState<SupportConfig>(DEFAULT_SUPPORT);
-  const [quickActions] = useState<QuickActionConfig[]>(DEFAULT_QUICK_ACTIONS);
+  const [support, setSupport] = useState<SupportConfig>(DEFAULT_SUPPORT);
+  const [quickActions, setQuickActions] = useState<QuickActionConfig[]>(DEFAULT_QUICK_ACTIONS);
   const [hasCustomBrand, setHasCustomBrand] = useState(false);
   const [loaded, setLoaded] = useState(false);
 
   useEffect(() => {
     let active = true;
     neonApi.publicConfig()
-      .then(({ config, source }) => {
+      .then(({ brand: remoteBrand, support: remoteSupport, quickActions: remoteQuickActions, hasCustomBrand: custom }) => {
         if (!active) return;
         setBrand({
           ...DEFAULT_BRAND,
-          name: config.platformName || DEFAULT_BRAND.name,
-          tagline: config.tagline || DEFAULT_BRAND.tagline,
-          logoUrl: config.logoUrl || DEFAULT_BRAND.logoUrl,
+          name: remoteBrand.name || DEFAULT_BRAND.name,
+          tagline: remoteBrand.tagline || DEFAULT_BRAND.tagline,
+          logoUrl: remoteBrand.logoUrl || DEFAULT_BRAND.logoUrl,
+          accentColor: remoteBrand.accentColor || DEFAULT_BRAND.accentColor,
+          footerNote: remoteBrand.footerNote || DEFAULT_BRAND.footerNote,
         });
-        setHasCustomBrand(source === "database");
+        setSupport({ ...DEFAULT_SUPPORT, ...remoteSupport });
+        setQuickActions(remoteQuickActions?.length ? remoteQuickActions : DEFAULT_QUICK_ACTIONS);
+        setHasCustomBrand(custom);
       })
       .catch(() => {
         // Use safe local defaults when the API is temporarily unavailable.
