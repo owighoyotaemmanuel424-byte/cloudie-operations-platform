@@ -36,6 +36,18 @@ app.use("*", cors({
   allowMethods: ["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
   maxAge: 600,
 }));
+// Reject cross-origin unsafe requests. This complements SameSite cookies and the
+// exact CORS allowlist; browser clients must send Origin on cookie-authenticated writes.
+app.use("*", async (c, next) => {
+  if (["POST", "PUT", "PATCH", "DELETE"].includes(c.req.method)) {
+    const origin = c.req.header("origin");
+    const hasCookie = Boolean(getCookie(c, "cloudie_session"));
+    if ((origin && !origins.includes(origin)) || (hasCookie && !origin)) {
+      return c.json({ error: "Cross-origin request rejected" }, 403);
+    }
+  }
+  await next();
+});
 app.use("*", async (c, next) => {
   await next();
   c.header("X-Content-Type-Options", "nosniff");
