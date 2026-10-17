@@ -364,6 +364,27 @@ app.get("/api/admin/users", auth, adminOnly, async (c) => {
   );
   return c.json({ users: result.rows });
 });
+app.get("/api/wallet/summary", auth, async (c) => {
+  const userId = c.get("user").id;
+  const [account, totals] = await Promise.all([
+    pool.query("SELECT wallet_balance_ngn FROM app_users WHERE id=$1", [userId]),
+    pool.query(
+      `SELECT COALESCE(SUM(CASE WHEN amount_ngn > 0 THEN amount_ngn ELSE 0 END),0) AS total_credits_ngn,
+              COALESCE(SUM(CASE WHEN amount_ngn < 0 THEN ABS(amount_ngn) ELSE 0 END),0) AS total_debits_ngn,
+              COUNT(*)::int AS entry_count
+       FROM wallet_ledger WHERE user_id=$1`,
+      [userId],
+    ),
+  ]);
+  if (!account.rows[0]) return fail(c, 404, "Wallet account not found");
+  return c.json({
+    balanceNgn: account.rows[0].wallet_balance_ngn,
+    totalCreditsNgn: totals.rows[0]?.total_credits_ngn ?? "0",
+    totalDebitsNgn: totals.rows[0]?.total_debits_ngn ?? "0",
+    entryCount: totals.rows[0]?.entry_count ?? 0,
+  });
+});
+
 app.get("/api/wallet/ledger", auth, async (c) => {
   const limit = parseLimit(c.req.query("limit"));
   const result = await pool.query(
