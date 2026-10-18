@@ -155,3 +155,10 @@ Added `scripts/audit-convex-removal.mjs` and the `npm run audit:convex-removal` 
 - The CI workflow still runs the Convex validation step and the package still contains Convex dependencies and deployment scripts. Those are intentionally retained until all source imports, auth/provider dependencies, endpoint parity, tests, and data cutover are complete.
 
 Current source check confirms `src/main.tsx` still imports `ConvexAuthProvider` and `ConvexReactClient`, while `src/lib/neonClient.tsx` still imports `getFunctionName` from `convex/server`. Removing the provider or uninstalling Convex now would break unresolved route and admin flows. Keep PR #17 in draft until the API parity and data/auth gates above are satisfied.
+
+
+### Query fallback safety improvement (2026-10-18)
+
+The compatibility adapter no longer translates an unrecognized Convex query into a fabricated empty array or null record, and it no longer translates a failed Neon request into an apparently valid empty result. It leaves the query unresolved and logs an explicit error instead. This reduces the risk of screens presenting a false “no records” state while their endpoint has not yet been migrated.
+
+This is an intermediate safety behavior, not complete UX parity: affected screens still need typed loading/error states and verified Neon endpoints before the compatibility adapter can be removed. Unsupported mutations already throw without claiming a write succeeded.
