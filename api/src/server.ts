@@ -29,36 +29,18 @@ type User = { id: string; email: string; name: string | null; role: "admin" | "u
 type Variables = { user: User };
 export const app = new Hono<{ Variables: Variables }>();
 
+const isProduction = process.env.NODE_ENV === "production";
 const defaultOrigins = [
-  "http://localhost:3000",
-  "http://127.0.0.1:3000",
-  "http://localhost:5173",
   "https://cloudie.wuaze.com",
+  ...(isProduction ? [] : ["http://localhost:3000", "http://127.0.0.1:3000", "http://localhost:5173"]),
 ];
 const envOrigins = (process.env.CORS_ORIGINS ?? "").split(",").map((x) => x.trim()).filter(Boolean);
-const configuredOrigins = Array.from(new Set([...defaultOrigins, ...envOrigins]));
+const configuredOrigins = new Set([...defaultOrigins, ...envOrigins]);
 
 function isAllowedOrigin(origin: string | undefined): boolean {
-  if (!origin) return false;
-  if (configuredOrigins.includes(origin)) return true;
-  try {
-    const url = new URL(origin);
-    const host = url.hostname.toLowerCase();
-    if (
-      host.endsWith(".run.app") ||
-      host.endsWith(".googleusercontent.com") ||
-      host.endsWith(".duckdns.org") ||
-      host.endsWith(".wuaze.com") ||
-      host.endsWith(".onrender.com") ||
-      host === "localhost" ||
-      host === "127.0.0.1"
-    ) {
-      return true;
-    }
-  } catch {
-    return false;
-  }
-  return false;
+  // Allow only exact, operator-configured origins. Do not trust shared-host suffixes:
+  // unrelated tenants can control subdomains on those platforms.
+  return Boolean(origin && configuredOrigins.has(origin));
 }
 
 app.use("*", cors({
