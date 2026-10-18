@@ -46,6 +46,13 @@ test("does not reflect an untrusted origin in CORS response headers", async () =
   assert.equal(response.headers.get("access-control-allow-origin"), null);
 });
 
+test("does not trust arbitrary shared-host subdomains as browser origins", async () => {
+  for (const origin of ["https://attacker.onrender.com", "https://unrelated.wuaze.com"]) {
+    const response = await app.request("/api/health", { headers: { Origin: origin } });
+    assert.equal(response.headers.get("access-control-allow-origin"), null, origin);
+  }
+});
+
 test("adds baseline security headers to ordinary API responses", async () => {
   const response = await app.request("/does-not-exist");
 
