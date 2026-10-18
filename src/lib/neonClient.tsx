@@ -219,16 +219,18 @@ export function useQuery(queryFn: unknown, args?: unknown): any {
       } else if (fnName.includes("resolveByHost")) {
         if (mountedRef.current) setData({ subdomain: null, tenant: null });
       } else {
-        // Fallback default safe response for untracked queries
-        if (mountedRef.current) {
-          setData(fnName.includes("list") || fnName.includes("get") ? [] : null);
-        }
+        // Do not fabricate empty data for a Convex function without a Neon mapping.
+        // Undefined keeps the screen from presenting an unsupported query as a
+        // verified empty result while its endpoint is still being migrated.
+        console.error(`[NeonClient] unsupported Neon query mapping: ${fnName || "(unknown function)"}`);
+        if (mountedRef.current) setData(undefined);
       }
     } catch (e) {
-      console.warn(`[NeonClient] query fallback for ${fnName}:`, e);
-      if (mountedRef.current) {
-        setData(fnName.includes("list") ? [] : null);
-      }
+      // API failures are not equivalent to an empty list or a missing record.
+      // Preserve an unresolved state and log the failure until the screen has a
+      // typed error-state contract.
+      console.error(`[NeonClient] query failed for ${fnName}:`, e);
+      if (mountedRef.current) setData(undefined);
     }
   }, [fnName, isSkipped, argsKey]);
 
