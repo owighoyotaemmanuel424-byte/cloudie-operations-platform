@@ -1,180 +1,199 @@
 import { useQuery, useMutation } from "convex/react";
 import { api } from "@/convex/_generated/api";
-import { Card, CardContent } from "@/components/ui/card";
+import type { Id } from "@/convex/_generated/dataModel";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { toast } from "sonner";
-import { Download, Search, Shield, UserCheck, UserX } from "lucide-react";
-import { useMemo, useState } from "react";
-import { Link } from "react-router";
-import { AdminPageHeader, StatusBadge, AdminEmpty, AdminSkeleton, downloadCsv, fmtDate } from "@/components/admin/shared";
-import { usePricing } from "@/lib/pricing";
-
-type SortKey = "newest" | "oldest" | "points-desc" | "points-asc" | "name";
+import { Skeleton } from "@/components/ui/skeleton";
+import { StatusBadge } from "@/components/admin/shared";
+import { ReasonRequiredDialog } from "@/components/admin/ReasonRequiredDialog";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { useState } from "react";
+import { Link, useNavigate } from "react-router";
+import { Users } from "lucide-react";const MONEY = (minor: number) => `₦${(minor / 100).toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
 
 export default function AdminUsers() {
-  const users = useQuery(api.admin.listUsers, { limit: 500 });
-  const { ngnPerPoint } = usePricing();
-  const suspendUser = useMutation(api.admin.suspendUser);
+  const rows = (useQuery as any)(api.adminOverview.userRows);
+  const toggleSuspend = useMutation(api.admin.suspendUser);
   const [search, setSearch] = useState("");
-  const [statusFilter, setStatusFilter] = useState("all");
-  const [sort, setSort] = useState<SortKey>("newest");
-  const [busyId, setBusyId] = useState<string | null>(null);
+  const [role, setRole] = useState("all");
+  const [status, setStatus] = useState("all");
+  const [balanceSel, setBalanceSel] = useState<"all" | "has" | "zero">("all");
+  const editDraft = null;
+  const [search, setSearch] = useState("");
+  const [role, setRole] = useState("all");
+  const [status, setStatus] = useState("all");
+  const [balanceSel] = useState<"all" | "has" | "zero">("all");
+  const navigate = useNavigate();
 
-  const filtered = useMemo(() => {
-    if (!users) return undefined;
-    let list = [...users];
-    if (search.trim()) {
-      const s = search.toLowerCase();
-      list = list.filter((u) => u.name?.toLowerCase().includes(s) || u.email?.toLowerCase().includes(s));
-    }
-    if (statusFilter === "suspended") list = list.filter((u) => u.isSuspended);
-    if (statusFilter === "active") list = list.filter((u) => !u.isSuspended);
-    if (statusFilter === "admin") list = list.filter((u) => u.role === "admin");
-    if (statusFilter === "vendor") list = list.filter((u) => u.role === "vendor");
-    switch (sort) {
-      case "newest":
-        list.sort((a, b) => (b.createdAt ?? 0) - (a.createdAt ?? 0));
-        break;
-      case "oldest":
-        list.sort((a, b) => (a.createdAt ?? 0) - (b.createdAt ?? 0));
-        break;
-      case "points-desc":
-        list.sort((a, b) => (b.walletBalanceNgn ?? (b.pointsBalance ?? 0) * ngnPerPoint) - (a.walletBalanceNgn ?? (a.pointsBalance ?? 0) * ngnPerPoint));
-        break;
-      case "points-asc":
-        list.sort((a, b) => (a.walletBalanceNgn ?? (a.pointsBalance ?? 0) * ngnPerPoint) - (b.walletBalanceNgn ?? (b.pointsBalance ?? 0) * ngnPerPoint));
-        break;
-      case "name":
-        list.sort((a, b) => (a.name ?? a.email ?? "").localeCompare(b.name ?? b.email ?? ""));
-        break;
-    }
-    return list;
-  }, [users, search, statusFilter, sort]);
+  const filtered = rows ? ([] as typeof rows).slice(0)
+    .concat(rows)
+    .filter((u) => {
+      if (search.trim()) {
+        const q = search.toLowerCase();
+        if (!(u.name.toLowerCase().includes(q) || u.email.toLowerCase().includes(q))) return false;
+      }
+      if (role !== "all" && u.role !== role) return false;
+      if (status !== "all" && u.status !== status) return false;      if (balanceSel === "has" && u.points <= 0 && u.balanceNgn <= 0) return false;
+      if (balanceSel === "zero" && (u.points !== 0 || u.balanceNgn !== 0)) return false;
+      return true;
+    }).sort((a, b) => b.createdAt - a.createdAt) : undefined;
 
-  const exportCsv = () => {
-    if (!filtered?.length) return;
-    downloadCsv(
-      `cloudie-users-${new Date().toISOString().split("T")[0]}.csv`,
-      [
-        ["Name", "Email", "Role", "Status", "Wallet (NGN)", "Created"],
-        ...filtered.map((u) => [
-          u.name ?? "",
-          u.email ?? "",
-          u.role ?? "user",
-          u.isSuspended ? "suspended" : "active",
-          u.walletBalanceNgn ?? (u.pointsBalance ?? 0) * ngnPerPoint,
-          fmtDate(u.createdAt),
-        ]),
-      ],
-    );
-  };
+  const [balanceSel] = useState<"all" | "has" | "zero">("all");
 
-  const toggleSuspend = async (userId: string, suspended: boolean) => {
-    setBusyId(userId);
+  async function toggleUser(id: Id<"users">, suspended: boolean, reason: string) {
+    setBusyId(id);
     try {
-      await suspendUser({ userId: userId as never, suspend: !suspended });
+      await toggleSuspend({ userId: id as never, suspend: !suspended, reason });
       toast.success(suspended ? "User reactivated" : "User suspended");
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Operation failed");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Operation failed");
     } finally {
       setBusyId(null);
     }
-  };
+  }
 
   return (
     <div className="space-y-6">
-      <AdminPageHeader
-        title="User Management"
-        description="Search, filter, and manage platform users."
-        actions={
-          <Button variant="outline" size="sm" onClick={exportCsv} disabled={!filtered?.length} className="gap-2">
-            <Download className="h-4 w-4" /> Export CSV
-          </Button>
-        }
-      />
-
-      <div className="flex flex-col gap-2 sm:flex-row">
-        <div className="relative flex-1">
-          <Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
-          <Input placeholder="Search name or email…" value={search} onChange={(e) => setSearch(e.target.value)} className="pl-9" />
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+        <div>
+          <h1 className="font-display text-2xl font-semibold tracking-tight">Users</h1>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Search, filter and manage platform users.
+          </p>
         </div>
-        <Select value={statusFilter} onValueChange={setStatusFilter}>
-          <SelectTrigger className="w-full sm:w-40"><SelectValue /></SelectTrigger>
+
+        <div className="flex flex-wrap items-center gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            className="gap-1.5"
+            disabled
+          >
+            Bulk
+          </Button>
+        </div>
+      </div>
+
+      <div className="flex flex-wrap items-center gap-2">
+        <Input
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder="Search name or email"
+          className="max-w-[220px]"
+          aria-label="Search users"
+        />
+        <Select value={role} onValueChange={setRole}>
+          <SelectTrigger className="max-w-[130px]"><SelectValue placeholder="Any role" /></SelectTrigger>
           <SelectContent>
-            <SelectItem value="all">All statuses</SelectItem>
-            <SelectItem value="active">Active</SelectItem>
-            <SelectItem value="suspended">Suspended</SelectItem>
-            <SelectItem value="admin">Admins</SelectItem>
-            <SelectItem value="vendor">Vendors</SelectItem>
+            <SelectItem value="all">Any role</SelectItem>
+            <SelectItem value="admin">Admin</SelectItem>
+            <SelectItem value="user">User</SelectItem>
+            <SelectItem value="vendor">Vendor</SelectItem>
           </SelectContent>
         </Select>
-        <Select value={sort} onValueChange={(v) => setSort(v as SortKey)}>
-          <SelectTrigger className="w-full sm:w-44"><SelectValue /></SelectTrigger>
+        <Select value={status} onValueChange={setStatus}>
+          <SelectTrigger className="max-w-[130px]"><SelectValue placeholder="Any status" /></SelectTrigger>
           <SelectContent>
-            <SelectItem value="newest">Newest first</SelectItem>
-            <SelectItem value="oldest">Oldest first</SelectItem>
-            <SelectItem value="points-desc">Highest wallet balance</SelectItem>
-            <SelectItem value="points-asc">Lowest wallet balance</SelectItem>
-            <SelectItem value="name">Name A–Z</SelectItem>
+            <SelectItem value="all">Any status</SelectItem>
+            <SelectItem value="active">Active</SelectItem>
+            <SelectItem value="suspended">Suspended</SelectItem>
+            <SelectItem value="terminated">Terminated</SelectItem>
+          </SelectContent>
+        </Select>
+        <Select value={balanceSel} onValueChange={setBalanceSel}>
+          <SelectTrigger className="max-w-[140px]"><SelectValue placeholder="Any balance" /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">Any balance</SelectItem>
+            <SelectItem value="has">Has balance</SelectItem>
+            <SelectItem value="zero">Zero balance</SelectItem>
           </SelectContent>
         </Select>
       </div>
 
       {filtered === undefined ? (
-        <AdminSkeleton rows={6} />
-      ) : filtered.length === 0 ? (
-        <AdminEmpty message="No users match your filters." hint="Try clearing the search or filter." />
-      ) : (
         <div className="space-y-2">
-          {filtered.map((u) => (
-            <Card key={u._id} className="rounded-xl border-slate-200 shadow-sm transition-shadow hover:shadow-md dark:border-slate-700">
-              <CardContent className="flex flex-wrap items-center gap-3 p-4">
-                <div className="flex size-9 shrink-0 items-center justify-center rounded-full bg-primary/15 text-sm font-bold text-primary">
-                  {(u.name || u.email || "U")[0]?.toUpperCase()}
-                </div>
-                <div className="min-w-0 flex-1">
-                  <Link to={`/admin/users/${u._id}`} className="block truncate text-sm font-medium text-slate-900 hover:text-blue-600 hover:underline dark:text-white">
-                    {u.name || "Unnamed"}
-                  </Link>
-                  <p className="truncate text-xs text-slate-500 dark:text-slate-400">{u.email || "No email"}</p>
-                </div>
-                <div className="flex shrink-0 items-center gap-1.5">
-                  <StatusBadge status={u.role === "admin" ? "admin" : u.role === "vendor" ? "vendor" : "user"} />
-                  <StatusBadge status={u.isTerminated ? "terminated" : u.isSuspended ? "suspended" : "active"} />
-                </div>
-                <div className="w-28 shrink-0 text-right">
-                  <p className="text-sm font-semibold text-blue-600 dark:text-blue-400">
-                    ₦{(u.walletBalanceNgn ?? (u.pointsBalance ?? 0) * ngnPerPoint).toLocaleString("en-NG")}
-                  </p>
-                  <p className="text-[11px] text-slate-400">
-                    NGN wallet
-                  </p>
-                </div>
-                <p className="hidden w-28 shrink-0 text-xs text-slate-400 md:block">{fmtDate(u.createdAt)}</p>
-                <div className="flex shrink-0 gap-1">
-                  <Button variant="outline" size="sm" asChild>
-                    <Link to={`/admin/users/${u._id}`}>View</Link>
-                  </Button>
-                  <Button
-                    variant="outline"
-                    size="icon"
-                    aria-label={u.isSuspended ? "Reactivate user" : "Suspend user"}
-                    disabled={busyId === u._id || u.role === "admin"}
-                    onClick={() => toggleSuspend(u._id, !!u.isSuspended)}
-                  >
-                    {u.isSuspended ? <UserCheck className="h-3.5 w-3.5 text-green-600" /> : <UserX className="h-3.5 w-3.5 text-red-500" />}
-                  </Button>
-                </div>
-              </CardContent>
-            </Card>
+          {[0, 1, 2, 3].map((i) => (
+            <Skeleton key={i} className="h-10 w-full" />
           ))}
+        </div>
+      ) : filtered.length === 0 ? (
+        <Card>
+          <CardContent className="py-10 text-center">
+            <Users className="mx-auto h-6 w-6 text-muted-foreground" />
+            <p className="mt-2 text-sm text-muted-foreground">No users match those filters.</p>
+          </CardContent>
+        </Card>
+      ) : (
+        <div className="overflow-x-auto">
+          <Card>
+            <div className="overflow-hidden border">
+              <Table>
+                <TableHeader>
+                  <TableRow className="hover:bg-transparent">
+                    <TableHead className="pl-3">User</TableHead>
+                    <TableHead>Role</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead className="text-right">Balance</TableHead>
+                    <TableHead className="text-right">Active workspaces</TableHead>
+                    <TableHead className="text-right">Created</TableHead>
+                    <TableHead className="pr-3 w-20 text-right">Actions</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {filtered.map((user) => (
+                    <TableRow key={user._id}>
+                      <TableCell className="pl-3">
+                        <div className="min-w-0">
+                          <Link to={`/admin/users/${user._id}`} className="block truncate text-sm font-medium hover:text-primary">
+                            {user.name || user.email}
+                          </Link>
+                          <p className="truncate text-[11px] text-muted-foreground">{user.email}</p>
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        <StatusBadge status={user.role} />
+                      </TableCell>
+                      <TableCell>
+                        <StatusBadge status={user.status} />
+                      </TableCell>
+                      <TableCell className="text-right font-mono text-xs">
+                        <span className="text-foreground">{MONEY(user.balanceNgn || user.points * 100)}</span>
+                        {user.points > 0 && (
+                          <span className="text-muted-foreground">
+                            {" "}
+                            · {user.points.toLocaleString()} pts
+                          </span>
+                        )}
+                      </TableCell>
+                      <TableCell className="text-right text-xs text-muted-foreground">
+                        {user.workspaces}
+                      </TableCell>
+                      <TableCell className="text-right text-[11px] text-muted-foreground">
+                        {new Date(user.createdAt).toLocaleDateString()}
+                      </TableCell>
+                      <TableCell className="pr-3 text-right">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-7 px-2 text-[11px]"
+                          onClick={() => void navigate(`/admin/users/${user._id}`)}
+                        >
+                          View
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          </Card>
         </div>
       )}
 
-      <p className="flex items-center gap-1.5 text-xs text-slate-400">
-        <Shield className="h-3.5 w-3.5" /> All actions on this page are authorized server-side and recorded in the audit log.
+      <p className="text-[11px] text-muted-foreground">
+        Balances are shown in NGN; point holdings are shown where larger than zero.
       </p>
     </div>
   );

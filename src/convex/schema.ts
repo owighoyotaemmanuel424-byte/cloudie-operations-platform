@@ -362,6 +362,10 @@ const schema = defineSchema(
       bankingEnabled: v.optional(v.boolean()),
       isActive: v.boolean(),
       renewalDate: v.optional(v.number()),
+      /** Display font chosen in the Theme tab; validated against a client allowlist. */
+      fontFamily: v.optional(v.string()),
+      /** Recurring point charge for the site plan, billed on each renewal date. */
+      monthlyPoints: v.optional(v.number()),
       // Branding + design kit applied from the template used at creation time.
       branding: v.optional(
         v.object({
@@ -398,6 +402,8 @@ const schema = defineSchema(
       documentUrl: v.optional(v.string()), // legacy field, unused by the new flow
       storageFileId: v.optional(v.id("storageFiles")),
       documentName: v.optional(v.string()),
+      /** Set by the tenant portal's liveness step before the record is filed. */
+      livenessPassed: v.optional(v.boolean()),
       resubmissionCount: v.optional(v.number()),
       rejectionReason: v.optional(v.string()),
       notes: v.optional(v.string()),
@@ -411,6 +417,8 @@ const schema = defineSchema(
       tenantId: v.id("tenantSites"),
       userId: v.id("users"),
       role: v.string(),
+      /** active | suspended — suspending blocks customer-portal sign-in without deleting history. */
+      status: v.optional(v.string()),
       createdAt: v.number(),
     })
       .index("by_tenant", ["tenantId"])
@@ -424,6 +432,23 @@ const schema = defineSchema(
       type: v.string(),
       createdAt: v.number(),
     }).index("by_tenant", ["tenantId", "createdAt"]),
+
+    /** Custom domains attached to a tenant site, verified by DNS TXT record. */
+    tenantDomains: defineTable({
+      tenantId: v.id("tenantSites"),
+      domain: v.string(),
+      /** DNS TXT value the owner must publish before verification can pass. */
+      verificationToken: v.string(),
+      // pending | verifying | verified | failed
+      status: v.string(),
+      attempts: v.number(),
+      lastCheckedAt: v.optional(v.number()),
+      lastError: v.optional(v.string()),
+      verifiedAt: v.optional(v.number()),
+      createdAt: v.number(),
+    })
+      .index("by_tenant", ["tenantId", "createdAt"])
+      .index("by_domain", ["domain"]),
 
     // ─── Banking engine: beneficiaries, deposits, withdrawals, transfers, double-entry posts ───
     bankingBeneficiaries: defineTable({
@@ -665,7 +690,63 @@ const schema = defineSchema(
       earnings: v.number(),
       totalSales: v.number(),
       createdAt: v.number(),
+      // Vendor onboarding (point marketplace). All optional so older rows stay valid.
+      contactName: v.optional(v.string()),
+      payoutMethod: v.optional(v.string()),
+      payoutDetails: v.optional(v.string()),
+      documentNames: v.optional(v.array(v.string())),
+      reviewedAt: v.optional(v.number()),
     }).index("by_user", ["userId"]).index("by_status", ["status", "createdAt"]),
+
+    /** Points-for-cash packages listed by verified vendors. */
+    pointPackages: defineTable({
+      vendorId: v.id("vendors"),
+      name: v.string(),
+      points: v.number(),
+      /** Price the buyer pays, in minor units of `currency`. */
+      priceMinor: v.number(),
+      currency: v.string(),
+      isActive: v.boolean(),
+      totalSold: v.number(),
+      createdAt: v.number(),
+    })
+      .index("by_vendor", ["vendorId"])
+      .index("by_active", ["isActive"]),
+
+    /** Point purchases held in escrow until the vendor fulfils. */
+    pointOrders: defineTable({
+      buyerId: v.id("users"),
+      packageId: v.id("pointPackages"),
+      vendorId: v.id("vendors"),
+      points: v.number(),
+      priceMinor: v.number(),
+      currency: v.string(),
+      // placed | paid | escrow | fulfilled | credited | disputed | cancelled | refunded
+      status: v.string(),
+      createdAt: v.number(),
+      paidAt: v.optional(v.number()),
+      escrowAt: v.optional(v.number()),
+      fulfilledAt: v.optional(v.number()),
+      creditedAt: v.optional(v.number()),
+      disputedAt: v.optional(v.number()),
+      disputeReason: v.optional(v.string()),
+      fulfilledBy: v.optional(v.id("users")),
+    })
+      .index("by_buyer", ["buyerId", "createdAt"])
+      .index("by_vendor", ["vendorId", "createdAt"]),
+
+    /** Vendor payout ledger — credited when escrow settles. */
+    vendorPayouts: defineTable({
+      vendorId: v.id("vendors"),
+      orderId: v.optional(v.id("pointOrders")),
+      amountMinor: v.number(),
+      currency: v.string(),
+      // pending | paid | failed
+      status: v.string(),
+      reference: v.string(),
+      createdAt: v.number(),
+      paidAt: v.optional(v.number()),
+    }).index("by_vendor", ["vendorId", "createdAt"]),
 
     marketplaceProducts: defineTable({
       vendorId: v.id("vendors"),
@@ -1062,6 +1143,9 @@ const schema = defineSchema(
       mimeType: v.string(),
       sizeBytes: v.number(),
       path: v.string(),
+      // Virtual folder path within the owner's library ("" = root, "brand/logos").
+      // Rows written before folders existed simply have no value → treated as root.
+      folder: v.optional(v.string()),
       sha256: v.optional(v.string()),
       isDeleted: v.boolean(),
       createdAt: v.number(),
@@ -1070,6 +1154,22 @@ const schema = defineSchema(
       .index("by_owner", ["ownerId", "createdAt"])
       .index("by_tenant", ["tenantId"])
       .index("by_storage", ["storageId"]),
+
+    // ─── Image studio: billed render jobs ───
+    // Charged up-front (points → ledger), then completed with the stored PNG or
+    // failed with an automatic refund, mirroring the email dispatch gate: money
+    // is never kept for a result that was never delivered.
+    imageRenderJobs: defineTable({
+      userId: v.id("users"),
+      status: v.union(v.literal("processing"), v.literal("succeeded"), v.literal("failed")),
+      template: v.string(),
+      params: v.any(),
+      pointsCost: v.number(),
+      fileId: v.optional(v.id("storageFiles")),
+      error: v.optional(v.string()),
+      createdAt: v.number(),
+      completedAt: v.optional(v.number()),
+    }).index("by_user", ["userId", "createdAt"]),
 
     // ─── Document engine: templates → versions → render → stored bytes ───
     // Schema-driven Cloudie templates. The renderer consumes a frozen

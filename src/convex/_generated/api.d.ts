@@ -10,6 +10,7 @@
 
 import type * as admin from "../admin.js";
 import type * as adminApi from "../adminApi.js";
+import type * as adminOverview from "../adminOverview.js";
 import type * as adminSeed from "../adminSeed.js";
 import type * as adminSeedInternal from "../adminSeedInternal.js";
 import type * as assets from "../assets.js";
@@ -34,6 +35,7 @@ import type * as emailRender from "../emailRender.js";
 import type * as emailShared from "../emailShared.js";
 import type * as health from "../health.js";
 import type * as http from "../http.js";
+import type * as imageRender from "../imageRender.js";
 import type * as jejelaye from "../jejelaye.js";
 import type * as lib_encryption from "../lib/encryption.js";
 import type * as logspanel from "../logspanel.js";
@@ -45,6 +47,7 @@ import type * as paymentConfig from "../paymentConfig.js";
 import type * as paystack from "../paystack.js";
 import type * as paystackInternal from "../paystackInternal.js";
 import type * as platform from "../platform.js";
+import type * as pointMarket from "../pointMarket.js";
 import type * as points from "../points.js";
 import type * as pricing from "../pricing.js";
 import type * as providers_aidapay from "../providers/aidapay.js";
@@ -54,7 +57,10 @@ import type * as serviceHub from "../serviceHub.js";
 import type * as shipments from "../shipments.js";
 import type * as storage from "../storage.js";
 import type * as support from "../support.js";
+import type * as tenantDomainVerify from "../tenantDomainVerify.js";
+import type * as tenantPortal from "../tenantPortal.js";
 import type * as tenantResolver from "../tenantResolver.js";
+import type * as tenantSuite from "../tenantSuite.js";
 import type * as tenantTransfers from "../tenantTransfers.js";
 import type * as tenants from "../tenants.js";
 import type * as tracking from "../tracking.js";
@@ -98,6 +104,7 @@ import type {
 declare const fullApi: ApiFromModules<{
   admin: typeof admin;
   adminApi: typeof adminApi;
+  adminOverview: typeof adminOverview;
   adminSeed: typeof adminSeed;
   adminSeedInternal: typeof adminSeedInternal;
   assets: typeof assets;
@@ -122,6 +129,7 @@ declare const fullApi: ApiFromModules<{
   emailShared: typeof emailShared;
   health: typeof health;
   http: typeof http;
+  imageRender: typeof imageRender;
   jejelaye: typeof jejelaye;
   "lib/encryption": typeof lib_encryption;
   logspanel: typeof logspanel;
@@ -133,6 +141,7 @@ declare const fullApi: ApiFromModules<{
   paystack: typeof paystack;
   paystackInternal: typeof paystackInternal;
   platform: typeof platform;
+  pointMarket: typeof pointMarket;
   points: typeof points;
   pricing: typeof pricing;
   "providers/aidapay": typeof providers_aidapay;
@@ -142,7 +151,10 @@ declare const fullApi: ApiFromModules<{
   shipments: typeof shipments;
   storage: typeof storage;
   support: typeof support;
+  tenantDomainVerify: typeof tenantDomainVerify;
+  tenantPortal: typeof tenantPortal;
   tenantResolver: typeof tenantResolver;
+  tenantSuite: typeof tenantSuite;
   tenantTransfers: typeof tenantTransfers;
   tenants: typeof tenants;
   tracking: typeof tracking;

@@ -134,7 +134,16 @@ const InvoiceDocument = lazyWithRetry(() => import("./pages/InvoiceDocument.tsx"
 const CustomsDocument = lazyWithRetry(() => import("./pages/CustomsDocument.tsx"));
 const BusinessSuite = lazyWithRetry(() => import("./pages/BusinessSuite.tsx"));
 const NewSite = lazyWithRetry(() => import("./pages/NewSite.tsx"));
-const SiteDetail = lazyWithRetry(() => import("./pages/SiteDetail.tsx"));
+const BusinessSiteDetail = lazyWithRetry(() => import("./pages/BusinessSiteDetail.tsx"));
+const PortalLogin = lazyWithRetry(() => import("./pages/t/PortalLogin.tsx"));
+const PortalDashboard = lazyWithRetry(() => import("./pages/t/PortalDashboard.tsx"));
+const PortalKyc = lazyWithRetry(() => import("./pages/t/PortalKyc.tsx"));
+const PortalLedger = lazyWithRetry(() => import("./pages/t/PortalLedger.tsx"));
+const PortalSettings = lazyWithRetry(() => import("./pages/t/PortalSettings.tsx"));
+const PointMarketplace = lazyWithRetry(() => import("./pages/marketplace/PointMarketplace.tsx"));
+const PointOrderDetail = lazyWithRetry(() => import("./pages/marketplace/PointOrderDetail.tsx"));
+const VendorApply = lazyWithRetry(() => import("./pages/vendor/VendorApply.tsx"));
+const VendorDashboard = lazyWithRetry(() => import("./pages/vendor/VendorDashboard.tsx"));
 const DocumentsPage = lazyWithRetry(() => import("./pages/Documents.tsx"));
 const DocumentTemplates = lazyWithRetry(() => import("./pages/DocumentTemplates.tsx"));
 const DocumentGenerator = lazyWithRetry(() => import("./pages/DocumentGenerator.tsx"));
@@ -147,8 +156,10 @@ const AdminDocumentTemplateEditor = lazyWithRetry(() => import("./pages/AdminDoc
 const AdminTemplateClassifier = lazyWithRetry(() => import("./pages/AdminTemplateClassifier.tsx"));
 const Services = lazyWithRetry(() => import("./pages/Services.tsx"));
 const EmailCampaign = lazyWithRetry(() => import("./pages/EmailCampaign.tsx"));
+const EmailComposer = lazyWithRetry(() => import("./pages/EmailComposer.tsx"));
 const RenderStudio = lazyWithRetry(() => import("./pages/RenderStudio.tsx"));
-const AssetsPage = lazyWithRetry(() => import("./pages/Assets.tsx"));
+const ImageStudio = lazyWithRetry(() => import("./pages/ImageStudio.tsx"));
+const AssetManager = lazyWithRetry(() => import("./pages/AssetManager.tsx"));
 const MarketplacePage = lazyWithRetry(() => import("./pages/Marketplace.tsx"));
 const Referrals = lazyWithRetry(() => import("./pages/Referrals.tsx"));
 const NotificationsPage = lazyWithRetry(() => import("./pages/Notifications.tsx"));
@@ -416,6 +427,13 @@ createRoot(document.getElementById("root")!).render(
                 <Route path="/site/:siteId/admin" element={<React.Suspense fallback={<RouteLoading />}><SiteAdmin /></React.Suspense>} />
                 <Route path="/:tenant/banking" element={<React.Suspense fallback={<RouteLoading />}><SiteBanking /></React.Suspense>} />
                 <Route path="/t/:subdomain/banking" element={<React.Suspense fallback={<RouteLoading />}><TenantBankingHost /></React.Suspense>} />
+                {/* White-label tenant portal — full brand replacement, own customer auth */}
+                <Route path="/t/:subdomain" element={<PortalLogin />} />
+                <Route path="/t/:subdomain/login" element={<PortalLogin />} />
+                <Route path="/t/:subdomain/dashboard" element={<PortalDashboard />} />
+                <Route path="/t/:subdomain/kyc" element={<PortalKyc />} />
+                <Route path="/t/:subdomain/ledger" element={<PortalLedger />} />
+                <Route path="/t/:subdomain/settings" element={<PortalSettings />} />
 
                 {/* Authenticated app routes with layout */}
                 <Route element={<RequireAuth><AppLayout /></RequireAuth>}>
@@ -452,7 +470,9 @@ createRoot(document.getElementById("root")!).render(
                   <Route path="/business" element={<BusinessSuite />} />
                   <Route path="/business/sites" element={<BusinessSuite />} />
                   <Route path="/business/sites/new" element={<NewSite />} />
-                  <Route path="/business/sites/:siteId" element={<SiteDetail />} />
+                  <Route path="/app/business" element={<BusinessSuite />} />
+                  <Route path="/app/business/:siteId" element={<BusinessSiteDetail />} />
+                  <Route path="/business/sites/:siteId" element={<BusinessSiteDetail />} />
                   <Route path="/documents" element={<DocumentsPage />} />
                   <Route path="/documents/templates" element={<DocumentTemplates />} />
                   <Route path="/documents/generate" element={<DocumentGenerator />} />
@@ -462,8 +482,18 @@ createRoot(document.getElementById("root")!).render(
                   <Route path="/documents/:documentId" element={<DocumentDetail />} />
                   <Route path="/services" element={<Services />} />
                   <Route path="/services/email" element={<EmailCampaign />} />
+                  <Route path="/services/email/new" element={<EmailComposer />} />
+                  <Route path="/app/services/email" element={<EmailCampaign />} />
+                  <Route path="/app/services/email/new" element={<EmailComposer />} />
                   <Route path="/services/render" element={<RenderStudio />} />
-                  <Route path="/services/assets" element={<AssetsPage />} />
+                  <Route path="/services/images" element={<ImageStudio />} />
+                  <Route path="/app/services/images" element={<ImageStudio />} />
+                  <Route path="/services/assets" element={<AssetManager />} />
+                  <Route path="/app/services/assets" element={<AssetManager />} />
+                  <Route path="/app/marketplace" element={<PointMarketplace />} />
+                  <Route path="/app/marketplace/orders/:orderId" element={<PointOrderDetail />} />
+                  <Route path="/app/vendor" element={<VendorDashboard />} />
+                  <Route path="/app/vendor/apply" element={<VendorApply />} />
                   <Route path="/marketplace" element={<MarketplacePage />} />
                   <Route path="/marketplace/numbers" element={<MarketplacePage />} />
                   <Route path="/marketplace/boost" element={<MarketplacePage />} />

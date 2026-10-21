@@ -228,6 +228,21 @@ function normalizeTenant(row: Record<string, unknown>, idx = 0) {
   };
 }
 
+/** Next 30-day billing anniversary for a tenant, used by the preview shim. */
+function nextRenewal(createdAt: number) {
+  const term = 30 * 86_400_000;
+  if (!createdAt) return Date.now() + term;
+  const elapsed = Math.max(0, Date.now() - createdAt);
+  return createdAt + (Math.floor(elapsed / term) + 1) * term;
+}
+
+async function neonTenantRows() {
+  const res = await neonApi.tenants().catch(() => ({ tenants: [] as Record<string, unknown>[] }));
+  return Array.isArray(res?.tenants)
+    ? res.tenants.map((row, i) => normalizeTenant(row as Record<string, unknown>, i))
+    : [];
+}
+
 function normalizeUser(row: Record<string, unknown>, idx = 0) {
   const id = String(row._id ?? row.id ?? `usr_${idx}`);
   const walletBalanceNgn = Number(row.walletBalanceNgn ?? row.wallet_balance_ngn ?? 0);
@@ -297,7 +312,7 @@ const DEFAULT_SERVICE_PRICES = [
   { _id: "sp_5", service: "commercial_invoice", workspace: "ticketing", pointsCost: 80, priceNgn: 1200, priceUsd: 0.8, isActive: true, effectiveFrom: Date.now() - 86400000, updatedAt: Date.now() },
   { _id: "sp_6", service: "customs_document", workspace: "ticketing", pointsCost: 100, priceNgn: 1500, priceUsd: 1.0, isActive: true, effectiveFrom: Date.now() - 86400000, updatedAt: Date.now() },
   { _id: "sp_7", service: "email_per_recipient", workspace: "services", pointsCost: 5, priceNgn: 75, priceUsd: 0.05, isActive: true, effectiveFrom: Date.now() - 86400000, updatedAt: Date.now() },
-  { _id: "sp_8", service: "image_render", workspace: "services", pointsCost: 25, priceNgn: 375, priceUsd: 0.25, isActive: true, effectiveFrom: Date.now() - 86400000, updatedAt: Date.now() },
+  { _id: "sp_8", service: "image_render", workspace: "services", pointsCost: 1, priceNgn: 15, priceUsd: 0.01, isActive: true, effectiveFrom: Date.now() - 86400000, updatedAt: Date.now() },
   { _id: "sp_9", service: "custom_document_design", workspace: "documents", pointsCost: 100, priceNgn: 1500, priceUsd: 1.0, isActive: true, effectiveFrom: Date.now() - 86400000, updatedAt: Date.now() },
 ];
 
@@ -1174,6 +1189,90 @@ export function useQuery(queryRef: unknown, args?: unknown): any {
           return;
         }
 
+        // 16. Business Suite (tenant site management)
+        if (fn === "tenantSuite:listSites") {
+          const list = await neonTenantRows();
+          if (!cancelled) {
+            setState(
+              list.map((t) => ({
+                _id: t._id,
+                siteName: t.siteName,
+                siteType: t.siteType,
+                subdomain: t.subdomain,
+                status: t.lifecycleStatus ?? (t.isActive ? "active" : "suspended"),
+                isActive: t.isActive,
+                renewalDate: nextRenewal(t.createdAt),
+                ledgerUsers: 0,
+                members: 0,
+                monthlyPoints: 250,
+              })),
+            );
+          }
+          return;
+        }
+
+        if (fn === "tenantSuite:getOverview") {
+          const list = await neonTenantRows();
+          const targetId = String(parsedArgs.tenantId ?? parsedArgs.id ?? "");
+          const tenant = list.find((t) => t._id === targetId) ?? null;
+          if (!cancelled) {
+            if (!tenant) {
+              setState(null);
+              return;
+            }
+            const renewalDate = nextRenewal(tenant.createdAt);
+            setState({
+              site: {
+                _id: tenant._id,
+                siteName: tenant.siteName,
+                displayName: tenant.displayName,
+                siteType: tenant.siteType,
+                subdomain: tenant.subdomain,
+                currency: tenant.currency,
+                status: tenant.lifecycleStatus ?? (tenant.isActive ? "active" : "suspended"),
+                isActive: tenant.isActive,
+                renewalDate,
+                fontFamily: "Inter",
+                branding: {
+                  logo: null,
+                  primaryColor: "#0f4c3a",
+                  accentColor: "#c8a24a",
+                  surfaceColor: "#f7f5ef",
+                  themeMode: "light",
+                  tagline: "Banking built around your community.",
+                  heroHeadline: "Your money, your neighbourhood.",
+                },
+                monthlyPoints: 250,
+                nextInvoiceAt: renewalDate,
+                graceEndsAt: renewalDate + 7 * 86_400_000,
+                graceDays: 7,
+              },
+              stats: {
+                users: 0,
+                activeUsers: 0,
+                ledgerVolume: 0,
+                ledgerCount: 0,
+                kycApprovedPct: 0,
+                kycPending: 0,
+                kycTotal: 0,
+                ledgerUsers: 0,
+              },
+              activity: [],
+            });
+          }
+          return;
+        }
+
+        if (
+          fn === "tenantSuite:listEndUsers" ||
+          fn === "tenantSuite:listLedger" ||
+          fn === "tenantSuite:listKyc" ||
+          fn === "tenantSuite:listDomains"
+        ) {
+          if (!cancelled) setState([]);
+          return;
+        }
+
         if (!cancelled) {
           setState([]);
         }
@@ -1233,6 +1332,19 @@ export function useMutation(mutationRef: unknown) {
     } else if (fn === "tenants:create" || fn === "bankingTenant:createBankingTenant" || fn === "bankingTenant:createAdminTenant") {
       const res = await neonApi.createTenant(payload);
       result = normalizeTenant((res.tenant ?? res) as Record<string, unknown>);
+    } else if (fn === "tenantSuite:payRenewalEarly") {
+      const list = await neonTenantRows();
+      const target = list.find((t) => t._id === String(payload.tenantId ?? ""));
+      result = {
+        renewalDate: nextRenewal(target?.createdAt ?? Date.now()),
+        charged: 250,
+        balanceAfter: 0,
+      };
+    } else if (fn === "tenantDomainVerify:verifyDomain") {
+      result = {
+        status: "failed",
+        message: "DNS verification needs the live backend — publish the TXT record and retry after deploy.",
+      };
     } else if (fn === "support:create") {
       const res = await neonApi.createSupportTicket(payload);
       result = res.id ?? res.ticket?.id;

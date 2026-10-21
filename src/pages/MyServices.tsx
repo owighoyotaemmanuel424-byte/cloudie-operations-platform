@@ -17,7 +17,7 @@ const catalog = [
   { key: "shipments", name: "Shipments", category: "Logistics", icon: Package, path: "/shipments", description: "Create, track and manage your deliveries." },
   { key: "documents", name: "Document Studio", category: "Documents", icon: FileText, path: "/documents", description: "Templates, documents and professional exports." },
   { key: "email", name: "Email", category: "Communication", icon: Mail, path: "/services/email", description: "Campaigns, templates and delivery history." },
-  { key: "render", name: "Render Studio", category: "Creative", icon: Palette, path: "/services/render", description: "Create and manage image renders." },
+  { key: "render", name: "Image Studio", category: "Creative", icon: Palette, path: "/app/services/images", description: "Render on-brand images from templates." },
   { key: "marketplace", name: "Marketplace", category: "Commerce", icon: ShoppingBag, path: "/marketplace", description: "Digital products, numbers and social services." },
 ];
 

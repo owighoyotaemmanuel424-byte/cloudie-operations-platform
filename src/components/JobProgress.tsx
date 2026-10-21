@@ -18,7 +18,7 @@ export function JobProgress({
   value?: number;
   label?: string;
   className?: string;
-}) {
+}): React.JSX.Element {
   const reduced = useReducedMotion();
   const determinate = typeof value === "number" && Number.isFinite(value);
   const percent = determinate ? Math.min(100, Math.max(0, value)) : undefined;

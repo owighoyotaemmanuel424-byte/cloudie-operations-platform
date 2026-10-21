@@ -398,6 +398,14 @@ function AdminShell() {
           </DropdownMenu>
         </header>
 
+        <div className="relative z-10 bg-error/12 border-b border-red-500/25" />
+        <header className="sticky top-0 z-30 flex h-7 shrink-0 items-center px-3 text-[11px] font-medium text-error/80">
+          Admin actions are logged
+        </header>
+        <div className="relative z-10 bg-error/12 border-b border-red-500/25" />
+        <header className="sticky top-0 z-30 flex h-7 shrink-0 items-center px-3 text-[11px] font-medium text-error/80">
+          Admin actions are logged
+        </header>
         <main className="min-w-0 flex-1">
           <div className="mx-auto w-full max-w-[1500px] p-4 sm:p-6 lg:p-8">
             <Outlet />

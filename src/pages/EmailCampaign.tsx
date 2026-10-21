@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
-import { ArrowLeft, Send } from "lucide-react";
+import { ArrowLeft, Plus, Send } from "lucide-react";
 import { useState } from "react";
 import { Link } from "react-router";
 
@@ -40,10 +40,15 @@ export default function EmailCampaign() {
     <div className="space-y-8">
       <div className="flex items-center gap-4">
         <Link to="/services"><Button variant="ghost" size="icon"><ArrowLeft className="h-4 w-4" /></Button></Link>
-        <div>
+        <div className="min-w-0 flex-1">
           <h1 className="text-2xl font-bold tracking-tight text-slate-900 dark:text-white">Email Campaign</h1>
           <p className="mt-1 text-sm text-muted-foreground">Compose and send email campaigns. Cost: {emailPrice.label} per email.</p>
         </div>
+        <Button asChild className="shrink-0 gap-2">
+          <Link to="/services/email/new">
+            <Plus className="h-4 w-4" /> New campaign
+          </Link>
+        </Button>
       </div>
 
       <form onSubmit={handleSubmit} className="space-y-6">

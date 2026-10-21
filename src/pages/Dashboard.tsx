@@ -767,7 +767,7 @@ export default function Dashboard() {
             )}
             <QuickActionRow to="/shipments/new" icon={Package} label="New shipment" />
             <QuickActionRow to="/documents/own/new" icon={FileStack} label="Generate document" />
-            <QuickActionRow to="/services/email" icon={Megaphone} label="Send campaign" />
+            <QuickActionRow to="/services/email/new" icon={Megaphone} label="Send campaign" hint="Compose in the drag-and-drop editor" />
             <QuickActionRow to="/referrals" icon={UserPlus} label="Invite a friend" hint="Earn points for every friend" />
           </CardContent>
         </Card>

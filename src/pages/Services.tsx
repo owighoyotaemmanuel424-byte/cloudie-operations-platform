@@ -4,8 +4,8 @@ import { Link } from "react-router";
 
 const services = [
   { label: "Email Campaigns", description: "Compose and send email campaigns with WYSIWYG editor", icon: Mail, to: "/services/email", color: "bg-blue-50 text-blue-600 dark:bg-blue-950/50 dark:text-blue-400" },
-  { label: "Picture Rendering Studio", description: "Create and render images with canvas tools", icon: Image, to: "/services/render", color: "bg-purple-50 text-purple-600 dark:bg-purple-950/50 dark:text-purple-400" },
-  { label: "Asset Manager", description: "Upload, organize, and manage your digital assets", icon: FolderOpen, to: "/services/assets", color: "bg-amber-50 text-amber-600 dark:bg-amber-950/50 dark:text-amber-400" },
+  { label: "Image Studio", description: "Pick a template, shape the copy, render a PNG", icon: Image, to: "/app/services/images", color: "bg-emerald-50 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-400" },
+  { label: "Asset Manager", description: "Upload, organise and manage your digital assets", icon: FolderOpen, to: "/app/services/assets", color: "bg-amber-50 text-amber-600 dark:bg-amber-950/50 dark:text-amber-400" },
 ];
 
 export default function Services() {
