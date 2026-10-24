@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useEffect, useState, useCallback } from "react";
+import React, { createContext, useContext, useEffect, useRef, useState, useCallback } from "react";
 import { neonApi, getCachedNeonUser, clearNeonSession, type NeonUser } from "./neonApi";
 import { PLATFORM_TEMPLATES } from "./platformTemplates";
 import { DEFAULT_POINT_PACKAGES } from "./pricing";
@@ -474,6 +474,14 @@ export function useQuery(queryRef: unknown, args?: unknown): any {
   const [state, setState] = useState<any>(undefined);
   const [version, setVersion] = useState(queryVersion);
 
+  // Callers pass a fresh object literal on every render (`{ limit: 50 }`,
+  // `{ orderId }`). Reading it through a ref keeps the effect body current while
+  // the dependency list stays limited to the serialized args. Putting the raw
+  // object in the deps made the effect run on every render, and its synchronous
+  // branches call `setState` — an infinite update loop (React error #185).
+  const latestArgs = useRef(args);
+  latestArgs.current = args;
+
   useEffect(() => {
     const listener = () => setVersion(queryVersion);
     queryListeners.add(listener);
@@ -483,6 +491,8 @@ export function useQuery(queryRef: unknown, args?: unknown): any {
   }, []);
 
   useEffect(() => {
+    // Shadow the render-scoped parameter: same content, no identity dependency.
+    const args = latestArgs.current;
     if (args === "skip") {
       setState(undefined);
       return;
@@ -1285,7 +1295,13 @@ export function useQuery(queryRef: unknown, args?: unknown): any {
     return () => {
       cancelled = true;
     };
-  }, [queryName, argsJson, args, version]);
+    // `args` is deliberately absent: `argsJson` already changes whenever the
+    // argument *values* do, and its identity changes on every render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // `args` is deliberately absent: `argsJson` already changes whenever the
+    // argument *values* do, and its identity changes on every render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [queryName, argsJson, version]);
 
   return state;
 }

@@ -18,7 +18,18 @@ process.env.DATABASE_URL = "postgres://cloudie_test:cloudie_test@127.0.0.1:5432/
 process.env.JWT_SECRET = "test-only-secret-that-is-longer-than-thirty-two-bytes";
 process.env.CORS_ORIGINS = "http://localhost:5173";
 
-const { app, pool } = await import("./server.js");
+const { app, pool, shouldProvisionSchema } = await import("./server.js");
+
+test("boot provisioning only touches a database that is missing required tables", () => {
+  // Brand-new database behind a working connection string: provision it.
+  assert.equal(shouldProvisionSchema({ enabled: true, missingTableCount: 8, guardTablePresent: false }), true);
+  // Healthy database: never rewrite or migrate it on boot.
+  assert.equal(shouldProvisionSchema({ enabled: true, missingTableCount: 0, guardTablePresent: false }), false);
+  // Disposable migration-test branch: never write there, even though it is bare.
+  assert.equal(shouldProvisionSchema({ enabled: true, missingTableCount: 8, guardTablePresent: true }), false);
+  // Operator disabled it on purpose.
+  assert.equal(shouldProvisionSchema({ enabled: false, missingTableCount: 8, guardTablePresent: false }), false);
+});
 
 test("rejects unsafe requests from an untrusted browser origin", async () => {
   const response = await app.request("/api/auth/logout", {
@@ -176,12 +187,19 @@ test("rejects malformed registration and login payloads before database access",
   assert.equal(login.status, 400);
 });
 
-test("returns 503 when the configured PostgreSQL database is unavailable", async () => {
+test("returns 503 on readiness, but stays live, when the configured PostgreSQL database is unavailable", async () => {
   const mutablePool = pool as unknown as { query: (...args: unknown[]) => Promise<unknown> };
   const originalQuery = mutablePool.query;
   mutablePool.query = async () => { throw new Error("simulated database outage"); };
   try {
-    const response = await app.request("/health");
+    // Liveness must not depend on PostgreSQL, or a database outage would make
+    // the platform kill an otherwise healthy instance.
+    const liveness = await app.request("/health");
+    assert.equal(liveness.status, 200);
+    const liveBody = await liveness.json() as { ok?: boolean };
+    assert.equal(liveBody.ok, true);
+
+    const response = await app.request("/ready");
     assert.equal(response.status, 503);
     assert.deepEqual(await response.json(), {
       ok: false,
@@ -190,6 +208,69 @@ test("returns 503 when the configured PostgreSQL database is unavailable", async
     });
   } finally {
     mutablePool.query = originalQuery;
+  }
+});
+
+test("reports a missing database schema as 503 provisioning, not 500, on sign-in", async () => {
+  const mutablePool = pool as unknown as { query: (...args: unknown[]) => Promise<unknown> };
+  const originalQuery = mutablePool.query;
+  mutablePool.query = async () => {
+    const error = new Error('relation "app_users" does not exist') as Error & { code: string };
+    error.code = "42P01";
+    throw error;
+  };
+  try {
+    const response = await app.request("/api/auth/login", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Origin: "http://localhost:5173",
+        "X-Forwarded-For": "203.0.113.205",
+      },
+      body: JSON.stringify({ email: "owner@example.com", password: "long-enough-password" }),
+    });
+    assert.equal(response.status, 503);
+    const data = await response.json() as { error?: string; code?: string };
+    assert.equal(data.code, "schema_missing");
+    assert.match(String(data.error), /database schema is missing or incomplete/);
+  } finally {
+    mutablePool.query = originalQuery;
+  }
+});
+
+test("reports a missing database schema as 503 provisioning, not 500, on registration", async () => {
+  const mutablePool = pool as unknown as { connect: () => Promise<unknown> };
+  const originalConnect = mutablePool.connect;
+  mutablePool.connect = async () => {
+    const error = new Error('relation "app_users" does not exist') as Error & { code: string };
+    error.code = "42P01";
+    return {
+      async query() {
+        throw error;
+      },
+      release() {},
+    };
+  };
+  try {
+    const response = await app.request("/api/auth/register", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Origin: "http://localhost:5173",
+        "X-Forwarded-For": "203.0.113.206",
+      },
+      body: JSON.stringify({
+        name: "Provisioning Probe",
+        email: "provisioning-probe@example.com",
+        password: "a-long-enough-password",
+      }),
+    });
+    assert.equal(response.status, 503);
+    const data = await response.json() as { error?: string; code?: string };
+    assert.equal(data.code, "schema_missing");
+    assert.match(String(data.error), /database schema is missing or incomplete/);
+  } finally {
+    mutablePool.connect = originalConnect;
   }
 });
 
@@ -282,16 +363,63 @@ test("returns 404 for nonexistent tracking number", async () => {
   }
 });
 
-test("responds on /ready when database is reachable", async () => {
+test("responds on /ready when database and schema are reachable", async () => {
   const mutablePool = pool as unknown as { query: (...args: unknown[]) => Promise<unknown> };
   const originalQuery = mutablePool.query;
-  mutablePool.query = async () => ({ rows: [{ ok: 1 }], rowCount: 1 });
+  mutablePool.query = async (sql: unknown) => {
+    if (String(sql).includes("information_schema.tables")) {
+      return {
+        rows: [
+          "app_users", "api_sessions", "platform_settings", "tenant_sites",
+          "wallet_ledger", "shipments", "user_notifications", "admin_audit_logs",
+        ].map((table_name) => ({ table_name })),
+        rowCount: 8,
+      };
+    }
+    return { rows: [{ ok: 1 }], rowCount: 1 };
+  };
   try {
     const response = await app.request("/ready");
     assert.equal(response.status, 200);
-    const data = await response.json() as { ok?: boolean; database?: string };
+    const data = await response.json() as { ok?: boolean; database?: string; schema?: string };
     assert.equal(data.ok, true);
     assert.equal(data.database, "connected");
+    assert.equal(data.schema, "complete");
+  } finally {
+    mutablePool.query = originalQuery;
+  }
+});
+
+test("refuses readiness when the database answers but the required schema is missing", async () => {
+  const mutablePool = pool as unknown as { query: (...args: unknown[]) => Promise<unknown> };
+  const originalQuery = mutablePool.query;
+  mutablePool.query = async (sql: unknown) => {
+    const text = String(sql);
+    // A fresh or wrong database: ping works, every table query would 500.
+    if (text.includes("information_schema.tables")) {
+      return { rows: [], rowCount: 0 };
+    }
+    if (text.includes("pg_class c JOIN pg_namespace")) {
+      return { rows: [{ count: "2", guard: true }], rowCount: 1 };
+    }
+    return { rows: [{ ok: 1 }], rowCount: 1 };
+  };
+  try {
+    const response = await app.request("/ready");
+    assert.equal(response.status, 503);
+    const data = await response.json() as {
+      ok?: boolean; database?: string; schema?: string; missing?: string[];
+      publicTableCount?: number; migrationGuardPresent?: boolean;
+    };
+    assert.equal(data.ok, false);
+    assert.equal(data.database, "connected");
+    assert.equal(data.schema, "incomplete");
+    assert.ok(Array.isArray(data.missing) && data.missing.includes("app_users"));
+    assert.ok(data.missing.includes("api_sessions"));
+    // The inventory line is what distinguishes a brand-new database from the
+    // disposable migration-test branch (guard table present).
+    assert.equal(data.publicTableCount, 2);
+    assert.equal(data.migrationGuardPresent, true);
   } finally {
     mutablePool.query = originalQuery;
   }
@@ -445,3 +573,152 @@ test("refuses login for suspended and terminated accounts without issuing a sess
   }
 });
 
+
+
+test("keeps first-admin bootstrap disabled when its operator token is absent", async () => {
+  const previous = process.env.CLOUDIE_ADMIN_BOOTSTRAP_TOKEN;
+  delete process.env.CLOUDIE_ADMIN_BOOTSTRAP_TOKEN;
+  try {
+    const response = await app.request("/api/auth/bootstrap-admin", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        name: "Initial Admin",
+        email: "admin@example.com",
+        password: "long-enough-test-password",
+        token: "x".repeat(40),
+      }),
+    });
+    assert.equal(response.status, 503);
+    assert.deepEqual(await response.json(), { error: "Administrator bootstrap is disabled" });
+  } finally {
+    if (previous === undefined) delete process.env.CLOUDIE_ADMIN_BOOTSTRAP_TOKEN;
+    else process.env.CLOUDIE_ADMIN_BOOTSTRAP_TOKEN = previous;
+  }
+});
+
+test("validates first-admin bootstrap payload before database access", async () => {
+  const previous = process.env.CLOUDIE_ADMIN_BOOTSTRAP_TOKEN;
+  process.env.CLOUDIE_ADMIN_BOOTSTRAP_TOKEN = "test-bootstrap-token-that-is-long-enough";
+  try {
+    const response = await app.request("/api/auth/bootstrap-admin", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: "", email: "not-an-email", password: "short", token: "x" }),
+    });
+    assert.equal(response.status, 400);
+    assert.deepEqual(await response.json(), { error: "Invalid administrator bootstrap details" });
+  } finally {
+    if (previous === undefined) delete process.env.CLOUDIE_ADMIN_BOOTSTRAP_TOKEN;
+    else process.env.CLOUDIE_ADMIN_BOOTSTRAP_TOKEN = previous;
+  }
+});
+
+test("rejects an incorrect first-admin bootstrap token without database access", async () => {
+  const previous = process.env.CLOUDIE_ADMIN_BOOTSTRAP_TOKEN;
+  const mutablePool = pool as unknown as { connect: (...args: unknown[]) => Promise<unknown> };
+  const originalConnect = mutablePool.connect;
+  process.env.CLOUDIE_ADMIN_BOOTSTRAP_TOKEN = "test-bootstrap-token-that-is-long-enough";
+  mutablePool.connect = async () => { throw new Error("database must not be accessed"); };
+  try {
+    const response = await app.request("/api/auth/bootstrap-admin", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        name: "Initial Admin",
+        email: "admin@example.com",
+        password: "long-enough-test-password",
+        token: "incorrect-bootstrap-token-value-000",
+      }),
+    });
+    assert.equal(response.status, 401);
+    assert.deepEqual(await response.json(), { error: "Invalid bootstrap authorization" });
+  } finally {
+    mutablePool.connect = originalConnect;
+    if (previous === undefined) delete process.env.CLOUDIE_ADMIN_BOOTSTRAP_TOKEN;
+    else process.env.CLOUDIE_ADMIN_BOOTSTRAP_TOKEN = previous;
+  }
+});
+
+test("validates points marketplace filters before database access", async () => {
+  const response = await app.request("/api/marketplace/packages?minPrice=-1");
+  assert.equal(response.status, 400);
+  assert.deepEqual(await response.json(), { error: "Marketplace filters must be non-negative numbers" });
+});
+
+test("rejects unsupported points marketplace sort values", async () => {
+  const response = await app.request("/api/marketplace/packages?sort=price;DROP%20TABLE");
+  assert.equal(response.status, 400);
+  assert.deepEqual(await response.json(), { error: "Unsupported marketplace sort" });
+});
+
+test("returns an empty public points marketplace list when the read model has no rows", async () => {
+  const mutablePool = pool as unknown as { query: (...args: unknown[]) => Promise<unknown> };
+  const originalQuery = mutablePool.query;
+  mutablePool.query = async (...args: unknown[]) => {
+    const sql = args[0];
+    const values = args[1] as unknown[];
+    assert.match(String(sql), /FROM point_market_packages/);
+    assert.match(String(sql), /v\.status = 'approved'/);
+    assert.deepEqual(values, [true, "", null, null, null, null]);
+    return { rows: [], rowCount: 0 };
+  };
+  try {
+    const response = await app.request("/api/marketplace/packages?verifiedOnly=true");
+    assert.equal(response.status, 200);
+    assert.deepEqual(await response.json(), []);
+  } finally {
+    mutablePool.query = originalQuery;
+  }
+});
+
+test("maps points marketplace database rows to the existing buyer response shape", async () => {
+  const mutablePool = pool as unknown as { query: (...args: unknown[]) => Promise<unknown> };
+  const originalQuery = mutablePool.query;
+  mutablePool.query = async () => ({
+    rows: [{
+      id: "pkg_1",
+      name: "Starter points",
+      points: "500",
+      price_minor: "125000",
+      currency: "NGN",
+      unit_price_minor: "250000",
+      total_sold: "7",
+      vendor_id: "vendor_1",
+      business_name: "Verified vendor",
+      is_verified: true,
+    }],
+    rowCount: 1,
+  });
+  try {
+    const response = await app.request("/api/marketplace/packages?verifiedOnly=true&sort=price_asc");
+    assert.equal(response.status, 200);
+    assert.deepEqual(await response.json(), [{
+      id: "pkg_1",
+      name: "Starter points",
+      points: 500,
+      priceMinor: 125000,
+      currency: "NGN",
+      unitPriceMinor: 250000,
+      totalSold: 7,
+      vendorId: "vendor_1",
+      vendorName: "Verified vendor",
+      vendorVerified: true,
+    }]);
+  } finally {
+    mutablePool.query = originalQuery;
+  }
+});
+
+test("returns a safe unavailable response when points marketplace tables are not ready", async () => {
+  const mutablePool = pool as unknown as { query: (...args: unknown[]) => Promise<unknown> };
+  const originalQuery = mutablePool.query;
+  mutablePool.query = async () => { throw new Error("simulated missing table"); };
+  try {
+    const response = await app.request("/api/marketplace/packages");
+    assert.equal(response.status, 503);
+    assert.deepEqual(await response.json(), { error: "Marketplace data is not available yet" });
+  } finally {
+    mutablePool.query = originalQuery;
+  }
+});

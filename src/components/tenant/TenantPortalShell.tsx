@@ -103,17 +103,36 @@ export function TenantPortalShell({
   useEffect(() => {
     if (!data) return;
     const root = document.documentElement;
-    const entries = Object.entries(bankThemeVars(theme)) as [string, string][];
-    const previous = entries.map(([key]) => [key, root.style.getPropertyValue(key)]);
+    const fontFamily = data.tenant.fontFamily;
+    const entries = Object.entries({
+      ...bankThemeVars(theme),
+      "--t-muted": theme.muted,
+      "--primary": theme.primary,
+      "--primary-foreground": "#ffffff",
+      "--background": theme.surface,
+      "--foreground": theme.text,
+      "--card": theme.panel,
+      "--card-foreground": theme.text,
+      "--border": theme.border,
+      "--input": theme.inputBg,
+      "--ring": theme.primary,
+      "--accent": theme.accent,
+      "--radius": theme.radius,
+      ...(fontFamily ? { "--font-sans": `"${fontFamily}", system-ui, sans-serif` } : {}),
+    }) as [string, string][];
+    const previous = entries.map(([key]) => [key, root.style.getPropertyValue(key)] as const);
+    const previousColorScheme = root.style.colorScheme;
+    const previousFontFamily = root.style.fontFamily;
     for (const [key, value] of entries) root.style.setProperty(key, value);
-    root.style.setProperty("--t-muted", theme.muted);
     root.style.colorScheme = theme.isDark ? "dark" : "light";
+    if (fontFamily) root.style.fontFamily = `"${fontFamily}", system-ui, sans-serif`;
     return () => {
       for (const [key, value] of previous) {
         if (value) root.style.setProperty(key, value);
         else root.style.removeProperty(key);
       }
-      root.style.removeProperty("--t-muted");
+      root.style.colorScheme = previousColorScheme;
+      root.style.fontFamily = previousFontFamily;
     };
   }, [data, theme]);
 
@@ -147,7 +166,13 @@ export function TenantPortalShell({
 
   const { tenant, viewer, membership } = data;
   const isMember = Boolean(membership?.isMember);
-  const suspended = !tenant.isAvailable;
+  const tenantStatus = String(
+    (tenant as typeof tenant & { status?: string; lifecycleStatus?: string }).status ??
+      (tenant as typeof tenant & { lifecycleStatus?: string }).lifecycleStatus ??
+      "",
+  ).toUpperCase();
+  const suspended =
+    !tenant.isAvailable || tenantStatus === "SUSPENDED" || tenantStatus === "LOCKED";
 
   const vars = {
     ...bankThemeVars(theme),

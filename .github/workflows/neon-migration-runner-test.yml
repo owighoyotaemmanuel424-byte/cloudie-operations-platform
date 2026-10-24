@@ -1,0 +1,127 @@
+name: Verify Neon migration runner (test branch)
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: neon-migration-runner-test
+  cancel-in-progress: false
+
+jobs:
+  verify-test-branch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      TEST_DATABASE_URL: ${{ secrets.CLOUDIE_NEON_TEST_DATABASE_URL }}
+      NEON_TEST_BRANCH_ID: br-bold-hat-b5f8mxvb
+      NEON_PRODUCTION_BRANCH_ID: br-winter-snow-b5spd77h
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Refuse missing or production-targeted configuration
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${TEST_DATABASE_URL:-}" || {
+            echo "::error::Add CLOUDIE_NEON_TEST_DATABASE_URL as a GitHub Actions secret. It must be the direct connection string for the fresh disposable migration-runner-clean-oct23 branch."
+            exit 1
+          }
+          test "$NEON_TEST_BRANCH_ID" = "br-bold-hat-b5f8mxvb" || {
+            echo "::error::Unexpected test branch ID; update this workflow only after independently verifying the replacement test branch."
+            exit 1
+          }
+          test "$NEON_TEST_BRANCH_ID" != "$NEON_PRODUCTION_BRANCH_ID" || {
+            echo "::error::Refusing to run migrations against the production branch."
+            exit 1
+          }
+          case "${TEST_DATABASE_URL,,}" in
+            *-pooler*|*pgbouncer=true*|*pool_mode=*)
+              echo "::error::Use the direct Neon test-branch connection string, not a pooled URL."
+              exit 1
+              ;;
+          esac
+          echo "Target guard passed for the configured fresh disposable branch ID. The operator must ensure the secret is the direct URL for that exact branch; credentials are never printed."
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install API dependencies
+        working-directory: api
+        run: npm ci
+
+      - name: Verify branch identity and clean starting schema
+        working-directory: api
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --input-type=module <<'NODE'
+          import pg from "pg";
+          const client = new pg.Client({ connectionString: process.env.TEST_DATABASE_URL });
+          try {
+            await client.connect();
+            const marker = await client.query(
+              "SELECT guard_value FROM public.cloudie_migration_test_guard WHERE guard_key = 'branch_identity'"
+            );
+            if (marker.rows.length !== 1 || marker.rows[0].guard_value !== "cloudie-migration-runner-test-clean-br-bold-hat-b5f8mxvb") {
+              throw new Error("Database branch identity marker is missing or does not match the approved disposable test branch.");
+            }
+            const tables = await client.query(
+              "SELECT table_name FROM information_schema.tables WHERE table_schema='public' AND table_type='BASE TABLE' ORDER BY table_name"
+            );
+            const names = tables.rows.map((r) => r.table_name);
+            const unexpected = names.filter((name) => name !== "cloudie_migration_test_guard");
+            if (unexpected.length !== 0) {
+              throw new Error("Refusing to migrate: expected a pristine test database containing only the guard table; found: " + unexpected.join(", "));
+            }
+            console.log("PASS: unique disposable-branch marker verified; only the guard table exists before migrations.");
+          } finally {
+            await client.end().catch(() => {});
+          }
+          NODE
+
+      - name: Run checksum-aware migration runner
+        working-directory: api
+        run: npm run migrate
+
+      - name: Verify repeat migration run is idempotent
+        working-directory: api
+        run: npm run migrate
+
+      - name: Verify migration checksums without writes
+        working-directory: api
+        run: npm run migrate:dry-run
+
+      - name: Assert all eight versions are recorded
+        working-directory: api
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --input-type=module <<'NODE'
+          import pg from "pg";
+          const client = new pg.Client({ connectionString: process.env.TEST_DATABASE_URL });
+          try {
+            await client.connect();
+            const result = await client.query(
+              "SELECT version, filename, checksum FROM schema_migrations ORDER BY version"
+            );
+            const expected = ["001", "002", "003", "004", "005", "006", "007", "008"];
+            const actual = result.rows.map((row) => row.version);
+            if (JSON.stringify(actual) !== JSON.stringify(expected)) {
+              throw new Error(`Expected migration versions ${expected.join(",")}; got ${actual.join(",")}`);
+            }
+            for (const row of result.rows) {
+              if (!row.filename?.endsWith(".sql") || !/^[a-f0-9]{64}$/.test(row.checksum)) {
+                throw new Error(`Invalid migration bookkeeping for version ${row.version}`);
+              }
+            }
+            console.log(`PASS: ${result.rowCount} ordered migration versions recorded with filenames and SHA-256 checksums.`);
+          } finally {
+            await client.end().catch(() => {});
+          }
+          NODE

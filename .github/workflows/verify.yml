@@ -1,0 +1,79 @@
+name: verify
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  lockfile-check:
+    runs-on: ubuntu-latest
+    outputs:
+      drift: ${{ steps.check.outputs.drift }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      - name: Detect lockfile drift
+        id: check
+        run: |
+          set +e
+          output=$(bun install --frozen-lockfile 2>&1)
+          status=$?
+          set -e
+          echo "$output"
+
+          if [ "$status" -eq 0 ]; then
+            echo "drift=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          if echo "$output" | grep -qi "lockfile had changes"; then
+            echo "drift=true" >> "$GITHUB_OUTPUT"
+            echo "::error::bun.lock is out of date with package.json."
+            echo "Run: gh workflow run regen-lock.yml --ref main"
+            echo "Then: gh workflow run verify.yml --ref main"
+            exit 1
+          fi
+
+          echo "::error::Install failed for a reason other than lockfile drift. Inspect the log above."
+          exit 1
+
+  root:
+    needs: lockfile-check
+    if: needs.lockfile-check.outputs.drift == 'false'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      - run: bun --version
+      - name: Install (frozen)
+        id: install
+        continue-on-error: true
+        run: bun install --frozen-lockfile
+      - name: Explain lockfile drift
+        if: steps.install.outcome == 'failure'
+        run: |
+          echo "::error::bun.lock is out of date with package.json."
+          echo "Run: gh workflow run regen-lock.yml --ref main"
+          echo "Then: gh workflow run verify.yml --ref main"
+          exit 1
+      - run: bunx tsc -b --noEmit
+      - run: bun test
+      - name: Typecheck manual scripts
+        run: bunx tsc -p tsconfig.scripts.json
+
+  api:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - run: npm --prefix api ci
+      - run: npm --prefix api run typecheck
+      - run: npm --prefix api test

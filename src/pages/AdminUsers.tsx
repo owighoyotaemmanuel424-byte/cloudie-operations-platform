@@ -11,7 +11,10 @@ import { ReasonRequiredDialog } from "@/components/admin/ReasonRequiredDialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { useState } from "react";
 import { Link, useNavigate } from "react-router";
-import { Users } from "lucide-react";const MONEY = (minor: number) => `₦${(minor / 100).toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
+import { toast } from "sonner";
+import { Users } from "lucide-react";
+
+const MONEY = (minor: number) => `₦${(minor / 100).toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
 
 export default function AdminUsers() {
   const rows = (useQuery as any)(api.adminOverview.userRows);
@@ -20,27 +23,26 @@ export default function AdminUsers() {
   const [role, setRole] = useState("all");
   const [status, setStatus] = useState("all");
   const [balanceSel, setBalanceSel] = useState<"all" | "has" | "zero">("all");
-  const editDraft = null;
-  const [search, setSearch] = useState("");
-  const [role, setRole] = useState("all");
-  const [status, setStatus] = useState("all");
-  const [balanceSel] = useState<"all" | "has" | "zero">("all");
+  const [busyId, setBusyId] = useState<Id<"users"> | null>(null);
   const navigate = useNavigate();
 
-  const filtered = rows ? ([] as typeof rows).slice(0)
-    .concat(rows)
-    .filter((u) => {
-      if (search.trim()) {
-        const q = search.toLowerCase();
-        if (!(u.name.toLowerCase().includes(q) || u.email.toLowerCase().includes(q))) return false;
-      }
-      if (role !== "all" && u.role !== role) return false;
-      if (status !== "all" && u.status !== status) return false;      if (balanceSel === "has" && u.points <= 0 && u.balanceNgn <= 0) return false;
-      if (balanceSel === "zero" && (u.points !== 0 || u.balanceNgn !== 0)) return false;
-      return true;
-    }).sort((a, b) => b.createdAt - a.createdAt) : undefined;
-
-  const [balanceSel] = useState<"all" | "has" | "zero">("all");
+  const filtered = rows
+    ? ([] as typeof rows)
+        .slice(0)
+        .concat(rows)
+        .filter((u: any) => {
+          if (search.trim()) {
+            const q = search.toLowerCase();
+            if (!(u.name.toLowerCase().includes(q) || u.email.toLowerCase().includes(q))) return false;
+          }
+          if (role !== "all" && u.role !== role) return false;
+          if (status !== "all" && u.status !== status) return false;
+          if (balanceSel === "has" && u.points <= 0 && u.balanceNgn <= 0) return false;
+          if (balanceSel === "zero" && (u.points !== 0 || u.balanceNgn !== 0)) return false;
+          return true;
+        })
+        .sort((a: any, b: any) => Number(b.createdAt) - Number(a.createdAt))
+    : undefined;
 
   async function toggleUser(id: Id<"users">, suspended: boolean, reason: string) {
     setBusyId(id);
@@ -102,7 +104,7 @@ export default function AdminUsers() {
             <SelectItem value="terminated">Terminated</SelectItem>
           </SelectContent>
         </Select>
-        <Select value={balanceSel} onValueChange={setBalanceSel}>
+        <Select value={balanceSel} onValueChange={(value) => setBalanceSel(value as "all" | "has" | "zero")}>
           <SelectTrigger className="max-w-[140px]"><SelectValue placeholder="Any balance" /></SelectTrigger>
           <SelectContent>
             <SelectItem value="all">Any balance</SelectItem>
@@ -142,7 +144,7 @@ export default function AdminUsers() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {filtered.map((user) => (
+                  {filtered.map((user: any) => (
                     <TableRow key={user._id}>
                       <TableCell className="pl-3">
                         <div className="min-w-0">

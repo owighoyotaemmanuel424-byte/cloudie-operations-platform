@@ -87,7 +87,7 @@ describe("Neon adapter & currency formatting regression suite", () => {
 
     const mainTsx = readFileSync("src/main.tsx", "utf8");
     expect(mainTsx).toContain('import Dashboard from "./pages/Dashboard.tsx"');
-    expect(mainTsx).toContain('import { AppLayout } from "./components/AppLayout.tsx"');
+    expect(mainTsx).toContain('import { AppShell } from "./components/nav/AppShell"');
     expect(mainTsx).toContain('window.addEventListener("vite:preloadError"');
   });
 

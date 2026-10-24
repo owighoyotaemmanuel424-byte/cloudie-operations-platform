@@ -14,16 +14,17 @@ Scope and meaning:
 
 | Metric | Value |
 | --- | --- |
-| Frontend files importing Convex | 96 |
-| Distinct Convex functions referenced | 373 |
-| Convex modules referenced | 47 |
+| Frontend files importing Convex | 109 |
+| Distinct Convex functions referenced | 429 |
+| Convex modules referenced | 53 |
 | …of which have ≥1 API route | 10 |
-| …with **no** API route at all | 37 |
-| Referenced functions in modules with no API route | 200 |
-| API routes in `api/src/server.ts` | 65 |
+| …with **no** API route at all | 43 |
+| Referenced functions in modules with no API route | 255 |
+| API routes in `api/src/server.ts` | 66 |
 
 ## Modules with no matching API route (migration not started for this domain)
 
+- `adminOverview` — 1 function(s): `adminOverview:userRows`
 - `adminSeed` — 1 function(s): `adminSeed:createAdministrator`
 - `assets` — 2 function(s): `assets:createCampaign`, `assets:listCampaigns`
 - `bankingAdmin` — 2 function(s): `bankingAdmin:adminListBalances`, `bankingAdmin:adminOverrideDeposit`
@@ -35,21 +36,26 @@ Scope and meaning:
 - `docTemplates` — 19 function(s): `docTemplates:archiveDocument`, `docTemplates:createDocument`, `docTemplates:createMyTemplate`, `docTemplates:ensureStarterTemplates`, `docTemplates:finalizeDocument`, `docTemplates:getDocument`, `docTemplates:getMyTemplate`, `docTemplates:getRenderQuote`, `docTemplates:getStudioStats`, `docTemplates:getTemplate`, `docTemplates:listCategories`, `docTemplates:listMyDocuments`, `docTemplates:listMyTemplates`, `docTemplates:listTemplates`, `docTemplates:publicViewDocument`, `docTemplates:revokeShare`, `docTemplates:shareDocument`, `docTemplates:updateDocumentValues`, `docTemplates:updateMyTemplate`
 - `email` — 7 function(s): `email:clearApiKey`, `email:clearSmtpPassword`, `email:refreshEmailStatus`, `email:saveApiKey`, `email:saveSmtpPassword`, `email:saveTransportConfig`, `email:sendTestEmail`
 - `emailAdmin` — 4 function(s): `emailAdmin:getEmailDeliveryStats`, `emailAdmin:getEmailSettings`, `emailAdmin:listEmailLogs`, `emailAdmin:saveConfig`
+- `imageRender` — 3 function(s): `imageRender:completeJob`, `imageRender:createJob`, `imageRender:failJob`
 - `jejelaye` — 2 function(s): `jejelaye:listNumberProducts`, `jejelaye:purchaseNumber`
 - `logspanel` — 5 function(s): `logspanel:listBoostCategories`, `logspanel:listBoostServices`, `logspanel:purchase`, `logspanel:refreshOrder`, `logspanel:syncCatalog`
 - `organization` — 2 function(s): `organization:getMyOrganization`, `organization:setMyOrganization`
 - `pairgate` — 1 function(s): `pairgate:com`
 - `paystack` — 3 function(s): `paystack:initializePayment`, `paystack:recoverPendingCredits`, `paystack:verifyAndCredit`
-- `points` — 1 function(s): `points:getBalance`
+- `pointMarket` — 11 function(s): `pointMarket:applyAsVendor`, `pointMarket:createOrder`, `pointMarket:createPackage`, `pointMarket:deletePackage`, `pointMarket:fulfillOrder`, `pointMarket:getMyOrder`, `pointMarket:listPackages`, `pointMarket:raiseDispute`, `pointMarket:setPackageActive`, `pointMarket:updatePackage`, `pointMarket:vendorOverview`
+- `points` — 2 function(s): `points:getPointLedger`, `points:getPointsBalance`
 - `pricing` — 4 function(s): `pricing:getBillingConfig`, `pricing:getServicePrices`, `pricing:savePointPackages`, `pricing:updatePointRate`
 - `referrals` — 4 function(s): `referrals:applyReferral`, `referrals:ensureCode`, `referrals:getMyCode`, `referrals:getMyReferrals`
 - `serviceHub` — 3 function(s): `serviceHub:getOverview`, `serviceHub:listMyServices`, `serviceHub:syncMyServices`
-- `storage` — 5 function(s): `storage:deleteFile`, `storage:generateUploadUrl`, `storage:getFileUrl`, `storage:listMyFiles`, `storage:registerFile`
+- `storage` — 10 function(s): `storage:deleteFile`, `storage:deleteFiles`, `storage:generateUploadUrl`, `storage:getFileUrl`, `storage:getUsage`, `storage:listFolders`, `storage:listMyFiles`, `storage:moveFiles`, `storage:registerFile`, `storage:renameFile`
 - `support` — 6 function(s): `support:close`, `support:create`, `support:get`, `support:listMine`, `support:markRead`, `support:reply`
+- `tenantDomainVerify` — 1 function(s): `tenantDomainVerify:verifyDomain`
+- `tenantPortal` — 4 function(s): `tenantPortal:joinPortal`, `tenantPortal:myPortal`, `tenantPortal:submitKyc`, `tenantPortal:updateProfile`
 - `tenantResolver` — 2 function(s): `tenantResolver:resolveByHost`, `tenantResolver:resolveBySubdomain`
+- `tenantSuite` — 16 function(s): `tenantSuite:addDomain`, `tenantSuite:deleteSite`, `tenantSuite:getOverview`, `tenantSuite:listDomains`, `tenantSuite:listEndUsers`, `tenantSuite:listKyc`, `tenantSuite:listLedger`, `tenantSuite:listSites`, `tenantSuite:lockdownSite`, `tenantSuite:payRenewalEarly`, `tenantSuite:reactivateSite`, `tenantSuite:removeDomain`, `tenantSuite:setUserStatus`, `tenantSuite:suspendSite`, `tenantSuite:transferOwnership`, `tenantSuite:updateTheme`
 - `tenantTransfers` — 1 function(s): `tenantTransfers:transferBetweenAccounts`
 - `trackingQueries` — 8 function(s): `trackingQueries:adminLabelData`, `trackingQueries:adminListShipments`, `trackingQueries:adminShipmentDetail`, `trackingQueries:listCarriers`, `trackingQueries:listFacilities`, `trackingQueries:listLocations`, `trackingQueries:listServiceTypes`, `trackingQueries:publicTracking`
-- `trackingUser` — 6 function(s): `trackingUser:createMyShipment`, `trackingUser:customerAddShipmentEvent`, `trackingUser:customerUpdateShipment`, `trackingUser:myPointsBalance`, `trackingUser:myShipmentDetail`, `trackingUser:myShipments`
+- `trackingUser` — 5 function(s): `trackingUser:customerAddShipmentEvent`, `trackingUser:customerUpdateShipment`, `trackingUser:myPointsBalance`, `trackingUser:myShipmentDetail`, `trackingUser:myShipments`
 - `uploadedDocuments` — 6 function(s): `uploadedDocuments:adminListAll`, `uploadedDocuments:adminRemoveAny`, `uploadedDocuments:create`, `uploadedDocuments:list`, `uploadedDocuments:remove`, `uploadedDocuments:rename`
 - `vtu` — 3 function(s): `vtu:getAirtimeOffers`, `vtu:listMyHistory`, `vtu:previewCost`
 - `vtuCatalog` — 2 function(s): `vtuCatalog:getPurchaseDetail`, `vtuCatalog:listCatalog`
@@ -73,7 +79,7 @@ Scope and meaning:
 | `marketplace` | 15 | GET|POST /api/orders, GET|POST|PATCH|DELETE /api/admin/catalog |
 | `notifications` | 4 | GET /api/notifications, POST /api/notifications/:id/read, POST /api/notifications/read-all |
 | `platform` | 5 | GET /api/public-config, GET|POST /api/admin/settings |
-| `tenants` | 34 | GET|POST /api/tenants |
+| `tenants` | 33 | GET|POST /api/tenants |
 | `tracking` | 13 | GET /api/tracking/:trackingNumber |
 | `wallet` | 4 | GET /api/wallet/summary, GET /api/wallet/ledger, POST /api/admin/users/:id/wallet-adjust |
 
@@ -87,9 +93,9 @@ Scope and meaning:
 - `admin:getInfrastructure` ← `src/pages/AdminInfrastructure.tsx`
 - `admin:getPaymentProviderKeys` ← `src/pages/AdminPaymentProviders.tsx`
 - `admin:listAdministrators` ← `src/pages/AdminAdministrators.tsx`, `src/pages/AdminRisk.tsx`
-- `admin:listUsers` ← `src/pages/AdminTransactions.tsx`, `src/pages/AdminUsers.tsx`
+- `admin:listUsers` ← `src/pages/AdminTransactions.tsx`
 - `admin:savePaymentProviderKey` ← `src/pages/AdminPaymentProviders.tsx`
-- `admin:suspendUser` ← `src/pages/AdminUserDetail.tsx`, `src/pages/AdminUsers.tsx`
+- `admin:suspendUser` ← `src/pages/AdminUserDetail.tsx`
 
 ### `adminApi` — has API routes
 
@@ -131,13 +137,17 @@ Scope and meaning:
 - `adminApi:upsertPricing` ← `src/pages/AdminCatalog.tsx`, `src/pages/AdminPricing.tsx`
 - `adminApi:upsertSetting` ← `src/pages/AdminSettings.tsx`
 
+### `adminOverview` — NO API ROUTE
+
+- `adminOverview:userRows` ← `src/pages/AdminUsers.tsx`
+
 ### `adminSeed` — NO API ROUTE
 
 - `adminSeed:createAdministrator` ← `src/pages/AdminAdministrators.tsx`
 
 ### `assets` — NO API ROUTE
 
-- `assets:createCampaign` ← `src/pages/EmailCampaign.tsx`
+- `assets:createCampaign` ← `src/pages/EmailCampaign.tsx`, `src/pages/EmailComposer.tsx`
 - `assets:listCampaigns` ← `src/pages/EmailCampaign.tsx`
 
 ### `bankingAdmin` — NO API ROUTE
@@ -215,7 +225,7 @@ Scope and meaning:
 - `docTemplates:getStudioStats` ← `src/pages/Documents.tsx`
 - `docTemplates:getTemplate` ← `src/pages/DocumentBuilder.tsx`, `src/pages/DocumentGenerator.tsx`
 - `docTemplates:listCategories` ← `src/pages/Documents.tsx`
-- `docTemplates:listMyDocuments` ← `src/pages/Documents.tsx`
+- `docTemplates:listMyDocuments` ← `src/pages/Dashboard.tsx`, `src/pages/Documents.tsx`
 - `docTemplates:listMyTemplates` ← `src/pages/DocumentGenerator.tsx`, `src/pages/DocumentTemplates.tsx`, `src/pages/Documents.tsx`
 - `docTemplates:listTemplates` ← `src/pages/DocumentGenerator.tsx`, `src/pages/DocumentTemplates.tsx`, `src/pages/Ticketing.tsx`
 - `docTemplates:publicViewDocument` ← `src/pages/PublicDocument.tsx`
@@ -247,6 +257,12 @@ Scope and meaning:
 - `emailAdmin:listEmailLogs` ← `src/pages/AdminEmailSettings.tsx`
 - `emailAdmin:saveConfig` ← `src/pages/AdminEmailSettings.tsx`
 
+### `imageRender` — NO API ROUTE
+
+- `imageRender:completeJob` ← `src/pages/ImageStudio.tsx`
+- `imageRender:createJob` ← `src/pages/ImageStudio.tsx`
+- `imageRender:failJob` ← `src/pages/ImageStudio.tsx`
+
 ### `jejelaye` — NO API ROUTE
 
 - `jejelaye:listNumberProducts` ← `src/pages/Marketplace.tsx`
@@ -271,8 +287,8 @@ Scope and meaning:
 - `marketplace:createOrder` ← `src/pages/Marketplace.tsx`
 - `marketplace:getLogspanelAdminStatus` ← `src/pages/AdminMarketplace.tsx`
 - `marketplace:getLogspanelProducts` ← `src/pages/AdminMarketplace.tsx`
-- `marketplace:getMyOrders` ← `src/pages/Dashboard.tsx`, `src/pages/Marketplace.tsx`, `src/pages/Orders.tsx`
-- `marketplace:getMyVendor` ← `src/pages/Vendor.tsx`
+- `marketplace:getMyOrders` ← `src/pages/Marketplace.tsx`, `src/pages/Orders.tsx`
+- `marketplace:getMyVendor` ← `src/pages/Vendor.tsx`, `src/pages/vendor/VendorApply.tsx`
 - `marketplace:listDisputes` ← `src/pages/AdminDisputes.tsx`
 - `marketplace:listProducts` ← `src/pages/Marketplace.tsx`
 - `marketplace:registerVendor` ← `src/pages/Vendor.tsx`
@@ -283,7 +299,7 @@ Scope and meaning:
 - `notifications:listAll` ← `src/pages/Notifications.tsx`
 - `notifications:markAllRead` ← `src/pages/Notifications.tsx`
 - `notifications:markRead` ← `src/pages/Notifications.tsx`
-- `notifications:unreadCount` ← `src/components/Header.tsx`, `src/pages/Dashboard.tsx`
+- `notifications:unreadCount` ← `src/components/Header.tsx`
 
 ### `organization` — NO API ROUTE
 
@@ -308,9 +324,24 @@ Scope and meaning:
 - `platform:saveQuickActions` ← `src/pages/AdminAppearance.tsx`
 - `platform:saveSupport` ← `src/pages/AdminAppearance.tsx`
 
+### `pointMarket` — NO API ROUTE
+
+- `pointMarket:applyAsVendor` ← `src/pages/vendor/VendorApply.tsx`
+- `pointMarket:createOrder` ← `src/pages/marketplace/PointMarketplace.tsx`
+- `pointMarket:createPackage` ← `src/pages/vendor/VendorDashboard.tsx`
+- `pointMarket:deletePackage` ← `src/pages/vendor/VendorDashboard.tsx`
+- `pointMarket:fulfillOrder` ← `src/pages/marketplace/PointOrderDetail.tsx`
+- `pointMarket:getMyOrder` ← `src/pages/marketplace/PointOrderDetail.tsx`
+- `pointMarket:listPackages` ← `src/pages/marketplace/PointMarketplace.tsx`
+- `pointMarket:raiseDispute` ← `src/pages/marketplace/PointOrderDetail.tsx`
+- `pointMarket:setPackageActive` ← `src/pages/vendor/VendorDashboard.tsx`
+- `pointMarket:updatePackage` ← `src/pages/vendor/VendorDashboard.tsx`
+- `pointMarket:vendorOverview` ← `src/pages/vendor/VendorDashboard.tsx`
+
 ### `points` — NO API ROUTE
 
-- `points:getBalance` ← `src/pages/AdminDocumentTemplateEditor.tsx`, `src/pages/VtuCatalog.tsx`
+- `points:getPointLedger` ← `src/pages/Transactions.tsx`, `src/pages/Wallet.tsx`
+- `points:getPointsBalance` ← `src/pages/AdminDocumentTemplateEditor.tsx`, `src/pages/VtuCatalog.tsx`, `src/pages/Wallet.tsx`
 
 ### `pricing` — NO API ROUTE
 
@@ -335,10 +366,15 @@ Scope and meaning:
 ### `storage` — NO API ROUTE
 
 - `storage:deleteFile` ← `src/pages/Assets.tsx`
-- `storage:generateUploadUrl` ← `src/components/documents/DocumentUploadDialog.tsx`, `src/pages/Assets.tsx`, `src/pages/DocumentBuilder.tsx`, `src/pages/VtuHistory.tsx`
-- `storage:getFileUrl` ← `src/pages/Assets.tsx`
-- `storage:listMyFiles` ← `src/pages/Assets.tsx`
-- `storage:registerFile` ← `src/pages/Assets.tsx`
+- `storage:deleteFiles` ← `src/pages/AssetManager.tsx`
+- `storage:generateUploadUrl` ← `src/components/documents/DocumentUploadDialog.tsx`, `src/pages/AssetManager.tsx`, `src/pages/Assets.tsx`, `src/pages/DocumentBuilder.tsx`, `src/pages/ImageStudio.tsx`, `src/pages/VtuHistory.tsx`, `src/pages/t/PortalKyc.tsx`
+- `storage:getFileUrl` ← `src/pages/AssetManager.tsx`, `src/pages/Assets.tsx`
+- `storage:getUsage` ← `src/pages/AssetManager.tsx`
+- `storage:listFolders` ← `src/pages/AssetManager.tsx`
+- `storage:listMyFiles` ← `src/pages/AssetManager.tsx`, `src/pages/Assets.tsx`
+- `storage:moveFiles` ← `src/pages/AssetManager.tsx`
+- `storage:registerFile` ← `src/pages/AssetManager.tsx`, `src/pages/Assets.tsx`, `src/pages/ImageStudio.tsx`, `src/pages/t/PortalKyc.tsx`
+- `storage:renameFile` ← `src/pages/AssetManager.tsx`
 
 ### `support` — NO API ROUTE
 
@@ -349,10 +385,40 @@ Scope and meaning:
 - `support:markRead` ← `src/pages/Support.tsx`
 - `support:reply` ← `src/pages/Support.tsx`
 
+### `tenantDomainVerify` — NO API ROUTE
+
+- `tenantDomainVerify:verifyDomain` ← `src/pages/BusinessSiteDetail.tsx`
+
+### `tenantPortal` — NO API ROUTE
+
+- `tenantPortal:joinPortal` ← `src/pages/t/PortalLogin.tsx`
+- `tenantPortal:myPortal` ← `src/components/tenant/TenantPortalShell.tsx`
+- `tenantPortal:submitKyc` ← `src/pages/t/PortalKyc.tsx`
+- `tenantPortal:updateProfile` ← `src/pages/t/PortalSettings.tsx`
+
 ### `tenantResolver` — NO API ROUTE
 
 - `tenantResolver:resolveByHost` ← `src/components/tenant/TenantGate.tsx`
 - `tenantResolver:resolveBySubdomain` ← `src/pages/TenantBankingHost.tsx`, `src/pages/site/SiteBanking.tsx`
+
+### `tenantSuite` — NO API ROUTE
+
+- `tenantSuite:addDomain` ← `src/pages/BusinessSiteDetail.tsx`
+- `tenantSuite:deleteSite` ← `src/pages/BusinessSiteDetail.tsx`
+- `tenantSuite:getOverview` ← `src/pages/BusinessSiteDetail.tsx`
+- `tenantSuite:listDomains` ← `src/pages/BusinessSiteDetail.tsx`
+- `tenantSuite:listEndUsers` ← `src/pages/BusinessSiteDetail.tsx`
+- `tenantSuite:listKyc` ← `src/pages/BusinessSiteDetail.tsx`
+- `tenantSuite:listLedger` ← `src/pages/BusinessSiteDetail.tsx`
+- `tenantSuite:listSites` ← `src/pages/BusinessSuite.tsx`
+- `tenantSuite:lockdownSite` ← `src/pages/BusinessSiteDetail.tsx`, `src/pages/BusinessSuite.tsx`
+- `tenantSuite:payRenewalEarly` ← `src/pages/BusinessSiteDetail.tsx`
+- `tenantSuite:reactivateSite` ← `src/pages/BusinessSiteDetail.tsx`, `src/pages/BusinessSuite.tsx`
+- `tenantSuite:removeDomain` ← `src/pages/BusinessSiteDetail.tsx`
+- `tenantSuite:setUserStatus` ← `src/pages/BusinessSiteDetail.tsx`
+- `tenantSuite:suspendSite` ← `src/pages/BusinessSiteDetail.tsx`
+- `tenantSuite:transferOwnership` ← `src/pages/BusinessSiteDetail.tsx`
+- `tenantSuite:updateTheme` ← `src/pages/BusinessSiteDetail.tsx`
 
 ### `tenantTransfers` — NO API ROUTE
 
@@ -381,7 +447,6 @@ Scope and meaning:
 - `tenants:getTenantLedger` ← `src/pages/SiteDetail.tsx`
 - `tenants:listAccounts` ← `src/pages/SiteDetail.tsx`
 - `tenants:listKyc` ← `src/pages/AdminBankingTenantDetail.tsx`, `src/pages/SiteDetail.tsx`
-- `tenants:listMy` ← `src/pages/BusinessSuite.tsx`
 - `tenants:listTenantUsers` ← `src/pages/AdminBankingTenantDetail.tsx`, `src/pages/SiteDetail.tsx`
 - `tenants:myAccounts` ← `src/pages/site/SiteAccounts.tsx`, `src/pages/site/SiteDashboard.tsx`
 - `tenants:myKyc` ← `src/pages/site/SiteDashboard.tsx`, `src/pages/site/SiteKyc.tsx`
@@ -419,17 +484,16 @@ Scope and meaning:
 - `trackingQueries:listCarriers` ← `src/pages/AdminCreateShipment.tsx`, `src/pages/AdminShipmentDetail.tsx`
 - `trackingQueries:listFacilities` ← `src/pages/AdminCreateShipment.tsx`, `src/pages/AdminLocations.tsx`
 - `trackingQueries:listLocations` ← `src/pages/AdminCreateShipment.tsx`, `src/pages/AdminLocations.tsx`
-- `trackingQueries:listServiceTypes` ← `src/pages/AdminCreateShipment.tsx`, `src/pages/NewShipment.tsx`
+- `trackingQueries:listServiceTypes` ← `src/pages/AdminCreateShipment.tsx`
 - `trackingQueries:publicTracking` ← `src/pages/PublicTracking.tsx`
 
 ### `trackingUser` — NO API ROUTE
 
-- `trackingUser:createMyShipment` ← `src/pages/NewShipment.tsx`
 - `trackingUser:customerAddShipmentEvent` ← `src/pages/ShipmentUpdateForm.tsx`
 - `trackingUser:customerUpdateShipment` ← `src/pages/ShipmentUpdateForm.tsx`
 - `trackingUser:myPointsBalance` ← `src/pages/ShipmentUpdateForm.tsx`
 - `trackingUser:myShipmentDetail` ← `src/pages/ShipmentDetail.tsx`, `src/pages/ShipmentUpdateForm.tsx`, `src/pages/ShipmentUpdates.tsx`
-- `trackingUser:myShipments` ← `src/pages/Dashboard.tsx`, `src/pages/Shipments.tsx`
+- `trackingUser:myShipments` ← `src/pages/Dashboard.tsx`, `src/pages/Ledger.tsx`, `src/pages/Shipments.tsx`
 
 ### `uploadedDocuments` — NO API ROUTE
 
@@ -505,8 +569,8 @@ Scope and meaning:
 
 - `wallet:adminAdjust` ← `src/pages/AdminUserDetail.tsx`
 - `wallet:getAdminLedger` ← `src/pages/AdminRisk.tsx`, `src/pages/AdminTransactions.tsx`
-- `wallet:getBalance` ← `src/components/Header.tsx`, `src/pages/BuyPoints.tsx`, `src/pages/Dashboard.tsx`, `src/pages/Marketplace.tsx`, `src/pages/Personal.tsx`, `src/pages/VtuAirtime.tsx`, `src/pages/VtuBills.tsx`, `src/pages/Wallet.tsx`
-- `wallet:getLedger` ← `src/pages/Dashboard.tsx`, `src/pages/Personal.tsx`, `src/pages/Transactions.tsx`, `src/pages/Wallet.tsx`
+- `wallet:getBalance` ← `src/components/Header.tsx`, `src/pages/BuyPoints.tsx`, `src/pages/Dashboard.tsx`, `src/pages/EmailComposer.tsx`, `src/pages/ImageStudio.tsx`, `src/pages/Marketplace.tsx`, `src/pages/NewShipment.tsx`, `src/pages/Personal.tsx`, `src/pages/ShipmentDetail.tsx`, `src/pages/VtuAirtime.tsx`, `src/pages/VtuBills.tsx`, `src/pages/Wallet.tsx`
+- `wallet:getLedger` ← `src/pages/Dashboard.tsx`, `src/pages/Ledger.tsx`, `src/pages/Personal.tsx`, `src/pages/Transactions.tsx`, `src/pages/Wallet.tsx`
 
 ## API route inventory (`api/src/server.ts`)
 
@@ -564,6 +628,7 @@ Scope and meaning:
 - `PATCH /api/notifications/:id/read`
 - `PATCH /api/profile`
 - `PATCH /api/shipments/:id`
+- `POST /api/admin/bootstrap`
 - `POST /api/admin/catalog`
 - `POST /api/admin/settings`
 - `POST /api/admin/users/:id/wallet-adjust`

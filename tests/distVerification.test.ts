@@ -28,12 +28,12 @@ describe("InfinityFree production MIME-type & asset integrity safeguards", () =>
     expect(sw).toContain('contentType.includes("text/css")');
   });
 
-  it("bundles Dashboard and AppLayout in the primary entry and consolidates lucide-react icons", () => {
+  it("bundles Dashboard and the app shell in the primary entry and consolidates lucide-react icons", () => {
     const mainTsx = fs.readFileSync(path.join(rootDir, "src/main.tsx"), "utf8");
     const viteConfig = fs.readFileSync(path.join(rootDir, "vite.config.ts"), "utf8");
 
     expect(mainTsx).toContain('import Dashboard from "./pages/Dashboard.tsx";');
-    expect(mainTsx).toContain('import { AppLayout } from "./components/AppLayout.tsx";');
+    expect(mainTsx).toContain('import { AppShell } from "./components/nav/AppShell";');
     expect(mainTsx).toContain("window.addEventListener(\"vite:preloadError\"");
     expect(mainTsx).toContain("not a valid JavaScript MIME type");
     expect(viteConfig).toContain("if (id.includes('lucide-react')) return 'ui-icons';");

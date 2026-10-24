@@ -1,8 +1,7 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router";
 import { useMutation, useQuery } from "convex/react";
 import type { FunctionReturnType } from "convex/server";
-import { toast } from "sonner";
 import { api } from "@/convex/_generated/api";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -12,34 +11,12 @@ import { Switch } from "@/components/ui/switch";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Separator } from "@/components/ui/separator";
 import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@/components/ui/empty";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { PageTransition, Reveal, StaggerGroup, StaggerItem } from "@/components/motion";
-import {
-  ArrowRight,
-  BadgeCheck,
-  CheckCircle2,
-  Coins,
-  Loader2,
-  Lock,
-  Search,
-  ShieldCheck,
-  ShoppingCart,
-  Store,
-} from "lucide-react";
+import { ArrowRight, BadgeCheck, Coins, Search, ShieldCheck, ShoppingCart, Store } from "lucide-react";
+import { fmtNaira, naira as moneyNaira, points as moneyPoints } from "@/components/money/FundsGate";
+import type { MarketplaceOrder } from "@/features/marketplace/orderState";
+import { PurchaseDialog } from "@/features/marketplace/PurchaseDialog";
 
 const SORTS = [
   { value: "recommended", label: "Recommended" },
@@ -50,7 +27,7 @@ const SORTS = [
 ];
 
 export function naira(minor: number) {
-  return `₦${(minor / 100).toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
+  return fmtNaira(moneyNaira(minor));
 }
 
 type Package = FunctionReturnType<typeof api.pointMarket.listPackages>[number];
@@ -236,7 +213,7 @@ export default function PointMarketplace() {
         <StaggerGroup className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
           {packages.map((pkg) => (
             <StaggerItem key={pkg._id}>
-              <Card className="flex h-full flex-col transition-shadow hover:shadow-md">
+              <Card className="flex h-full flex-col">
                 <CardContent className="flex flex-1 flex-col p-4">
                   <div className="flex items-start justify-between gap-2">
                     <div className="min-w-0">
@@ -292,107 +269,84 @@ export default function PointMarketplace() {
 
 function CheckoutDialog({ pkg, onClose }: { pkg: Package | null; onClose: () => void }) {
   const createOrder = useMutation(api.pointMarket.createOrder);
+  const walletBalance = useQuery(api.wallet.getBalance);
   const navigate = useNavigate();
+  const [orderId, setOrderId] = useState<FunctionReturnType<typeof api.pointMarket.createOrder>["orderId"] | null>(null);
+  const [orderState, setOrderState] = useState<MarketplaceOrder | null>(null);
   const [busy, setBusy] = useState(false);
-  const [orderId, setOrderId] = useState<string | null>(null);
+  const liveOrder = useQuery(api.pointMarket.getMyOrder, orderId ? { orderId } : "skip");
 
-  const reset = () => {
+  const price = pkg ? moneyNaira(pkg.priceMinor) : moneyNaira(0);
+  const balance = moneyNaira(Math.max(0, Math.round((walletBalance ?? 0) * 100)));
+  const draft = pkg ? {
+    productId: String(pkg._id),
+    productName: pkg.name,
+    vendorName: pkg.vendorName,
+    quantity: 1,
+    price,
+    pointsReward: moneyPoints(pkg.points),
+    walletBefore: balance,
+    walletAfter: moneyNaira(Math.max(0, balance.kobo - price.kobo)),
+  } : null;
+
+  // Convex query is reactive: escrow stays pending until the vendor credits points.
+  useEffect(() => {
+    if (!orderId || !liveOrder || !draft) return;
+    if (liveOrder.status === "credited") {
+      setOrderState({ status: "success", reference: String(orderId), draft, pointsCredited: moneyPoints(liveOrder.points), walletAfter: balance });
+    } else {
+      setOrderState({ status: "pending", reference: String(orderId), draft });
+    }
+  }, [orderId, liveOrder, draft?.productId, draft?.price.kobo, draft?.pointsReward.amount, balance.kobo]);
+
+  function close() {
+    setOrderState(null);
     setOrderId(null);
     setBusy(false);
     onClose();
-  };
+  }
 
-  async function pay() {
-    if (!pkg) return;
+  async function confirm() {
+    if (!pkg || !draft || busy) return;
     setBusy(true);
     try {
       const result = await createOrder({ packageId: pkg._id });
       setOrderId(result.orderId);
-      toast.success("Payment received — points are in escrow");
+      setOrderState({ status: "pending", reference: String(result.orderId), draft });
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Checkout failed";
-      toast.error(/insufficient/i.test(message) ? "Your wallet balance is too low for this package." : message);
+      const message = error instanceof Error ? error.message : "Purchase could not be completed.";
+      setOrderState({
+        status: "failed",
+        reference: "not-created",
+        draft,
+        reason: /insufficient|wallet balance is too low/i.test(message)
+          ? "Your wallet balance is too low for this package."
+          : message,
+        charged: false,
+      });
     } finally {
       setBusy(false);
     }
   }
 
   return (
-    <Dialog open={Boolean(pkg)} onOpenChange={(open) => !open && reset()}>
-      <DialogContent className="sm:max-w-md">
-        {orderId ? (
-          <>
-            <DialogHeader>
-              <DialogTitle className="flex items-center gap-2">
-                <CheckCircle2 className="h-5 w-5 text-success" /> Paid — funds in escrow
-              </DialogTitle>
-              <DialogDescription>
-                {pkg?.points.toLocaleString()} points are reserved. They land in your balance the moment{" "}
-                {pkg?.vendorName} fulfils the order.
-              </DialogDescription>
-            </DialogHeader>
-            <div className="rounded-lg border border-border bg-surface-2/60 px-3 py-2 font-mono text-[11px] text-muted-foreground">
-              Order {orderId.slice(-10).toUpperCase()}
-            </div>
-            <DialogFooter className="gap-2 sm:gap-2">
-              <Button variant="ghost" onClick={reset}>
-                Keep browsing
-              </Button>
-              <Button className="gap-1.5" onClick={() => navigate(`/app/marketplace/orders/${orderId}`)}>
-                View order <ArrowRight className="h-3.5 w-3.5" />
-              </Button>
-            </DialogFooter>
-          </>
-        ) : (
-          <>
-            <DialogHeader>
-              <DialogTitle>Confirm purchase</DialogTitle>
-              <DialogDescription>
-                {pkg?.name} from {pkg?.vendorName}
-              </DialogDescription>
-            </DialogHeader>
-
-            {pkg && (
-              <div className="space-y-3">
-                <dl className="divide-y divide-border rounded-lg border border-border">
-                  {[
-                    ["Points", `${pkg.points.toLocaleString()} pts`],
-                    ["Price", naira(pkg.priceMinor)],
-                    ["Unit price", `${naira(pkg.unitPriceMinor)} / 1,000 pts`],
-                  ].map(([label, value]) => (
-                    <div key={label} className="flex items-center justify-between px-3 py-2 text-xs">
-                      <dt className="text-muted-foreground">{label}</dt>
-                      <dd className="font-mono font-medium text-foreground">{value}</dd>
-                    </div>
-                  ))}
-                </dl>
-
-                <div className="rounded-lg border border-info/25 bg-info/5 p-3 text-[11px] leading-relaxed text-foreground">
-                  <p className="flex items-center gap-1.5 font-semibold">
-                    <Lock className="h-3.5 w-3.5" /> How escrow works
-                  </p>
-                  <ul className="mt-1.5 space-y-1 text-muted-foreground">
-                    <li>1. {naira(pkg.priceMinor)} leaves your wallet and is held by Cloudie escrow.</li>
-                    <li>2. The vendor is notified and must fulfil the order.</li>
-                    <li>3. Points are credited to you and the vendor is paid at the same time.</li>
-                    <li>4. If they don't fulfil, you can raise a dispute and get refunded.</li>
-                  </ul>
-                </div>
-              </div>
-            )}
-
-            <DialogFooter className="gap-2 sm:gap-2">
-              <Button variant="ghost" onClick={reset} disabled={busy}>
-                Cancel
-              </Button>
-              <Button onClick={() => void pay()} disabled={busy} className="gap-1.5">
-                {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Lock className="h-3.5 w-3.5" />}
-                {busy ? "Charging wallet" : `Pay ${pkg ? naira(pkg.priceMinor) : ""}`}
-              </Button>
-            </DialogFooter>
-          </>
-        )}
-      </DialogContent>
-    </Dialog>
+    <PurchaseDialog
+      open={Boolean(pkg)}
+      order={orderState ?? (draft ? { status: "review", draft } : null)}
+      onOpenChange={(open) => { if (!open && !busy) close(); }}
+      onConfirm={() => void confirm()}
+      busy={busy}
+      onRetry={() => setOrderState(draft ? { status: "review", draft } : null)}
+      onRefresh={() => {
+        if (!orderId || !draft || !liveOrder) return;
+        if (liveOrder.status === "credited") {
+          setOrderState({ status: "success", reference: String(orderId), draft, pointsCredited: moneyPoints(liveOrder.points), walletAfter: balance });
+        } else {
+          setOrderState({ status: "pending", reference: String(orderId), draft });
+        }
+      }}
+      onViewOrder={(reference) => navigate(`/app/marketplace/orders/${reference}`)}
+      onContactSupport={() => navigate("/app/support")}
+    />
   );
 }

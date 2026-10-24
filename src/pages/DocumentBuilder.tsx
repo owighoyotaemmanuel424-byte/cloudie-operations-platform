@@ -94,8 +94,14 @@ export default function DocumentBuilder() {
       // choices and required hidden fields, and retain explicit authenticity
       // notices where a template needs them.
       const neutralDefaults: Record<string, unknown> = {};
-      for (const field of template.schema.fields) {
-        const raw = template.defaults[field.id] ?? field.default ?? "";
+      // A template served by an older backend revision may predate `defaults`
+      // (or even `schema`); the page must render an empty form for it rather
+      // than crash with "undefined is not an object".
+      const templateSchema = template.schema ?? { fields: [] };
+      const defaults = template.defaults ?? {};
+      const fields = templateSchema.fields ?? [];
+      for (const field of fields) {
+        const raw = defaults[field.id] ?? field.default ?? "";
         if (field.hidden) {
           neutralDefaults[field.id] = raw;
         } else if (field.type === "color") {
@@ -113,7 +119,7 @@ export default function DocumentBuilder() {
         }
       }
       const seeded = { ...neutralDefaults, ...(briefValues ?? {}) };
-      return briefValues ? pruneBriefRowDefaults(template.schema, seeded, briefValues) : seeded;
+      return briefValues ? pruneBriefRowDefaults(templateSchema, seeded, briefValues) : seeded;
     });
   }, [template, briefValues]);
 

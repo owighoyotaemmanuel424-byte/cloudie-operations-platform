@@ -48,15 +48,21 @@ jobs:
       - name: ESLint (feature surface)
         run: npx eslint src/pages/MyServices.tsx src/pages/Billing.tsx src/convex/serviceHub.ts src/convex/auth/emailOtp.ts src/convex/auth.config.ts
 
-      # The migration trace records every Convex function the frontend still
-      # calls and every API route that exists. A stale committed trace would
-      # understate the remaining Convex-to-Neon work, so it is verified here.
-      - name: Convex-to-Neon migration trace is current
-        run: node scripts/trace-convex-usage.mjs --check
+      # No database is configured in CI, so this validates migration ordering,
+      # checksums and statement planning without connecting anywhere.
+      - name: Migration files plan cleanly (offline dry-run)
+        run: npm run migrate:dry-run
+
+      # Regenerate the trace from checked-out source before validating it.
+      # This prevents a stale generated document from blocking build validation.
+      - name: Regenerate and validate Convex-to-Neon migration trace
+        run: |
+          node scripts/trace-convex-usage.mjs
+          node scripts/trace-convex-usage.mjs --check
 
       - name: Production build
         env:
-          VITE_NEON_API_URL: ${{ vars.VITE_NEON_API_URL || 'https://cloudie-operations-api-stage.onrender.com' }}
+          VITE_NEON_API_URL: ${{ vars.VITE_NEON_API_URL || 'https://cloudie-glaa.onrender.com' }}
         run: npm run build
 
       - name: Verify production build assets and .htaccess
