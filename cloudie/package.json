@@ -1,0 +1,31 @@
+{
+  "name": "cloudie-platform",
+  "version": "0.1.0",
+  "private": true,
+  "packageManager": "pnpm@9.15.0",
+  "engines": {
+    "node": ">=20.11"
+  },
+  "scripts": {
+    "dev": "turbo dev",
+    "build": "turbo build",
+    "lint": "turbo lint",
+    "typecheck": "turbo typecheck",
+    "test": "turbo test",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "db:generate": "pnpm --filter @cloudie/db db:generate",
+    "db:migrate": "pnpm --filter @cloudie/db db:migrate",
+    "db:seed": "pnpm --filter @cloudie/db db:seed",
+    "db:studio": "pnpm --filter @cloudie/db db:studio",
+    "prepare": "husky"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "prettier": "^3.4.2",
+    "turbo": "^2.3.3",
+    "typescript": "^5.7.2",
+    "vitest": "^2.1.8",
+    "husky": "^9.1.7"
+  }
+}
