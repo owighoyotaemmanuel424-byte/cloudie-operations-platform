@@ -1,0 +1,16 @@
+{
+  "name": "@cloudie/types",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./schemas": "./src/schemas.ts",
+    "./api": "./src/api.ts"
+  },
+  "dependencies": {
+    "zod": "^3.24.1"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.2"
+  }
+}
