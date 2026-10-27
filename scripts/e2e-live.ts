@@ -14,7 +14,7 @@ if (!process.env.JWT_SECRET) {
   process.env.JWT_SECRET = "e2e-ephemeral-" + "0123456789abcdef".repeat(4);
 }
 
-const { app, pool } = await import("../src/server.js");
+const { app, pool } = await import("../api/src/server.js");
 
 const failures: string[] = [];
 function check(name: string, ok: boolean, detail = "") {
