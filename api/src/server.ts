@@ -1068,9 +1068,15 @@ app.onError((error: Error, c) => {
 
 // Export the Hono app for isolated HTTP-level tests. Tests set NODE_ENV=test before
 // importing this module so they never bind a port or require a live database.
-const server = process.env.NODE_ENV === "test" ? undefined : serve({ fetch: app.fetch, port }, (info) => {
-  console.log(`Cloudie Neon API listening on ${info.port}`);
-});
+// Vercel invokes the exported Hono app as a serverless function; local/Render
+// deployments continue to use the Node HTTP server.
+const server = process.env.NODE_ENV === "test" || process.env.VERCEL === "1"
+  ? undefined
+  : serve({ fetch: app.fetch, port }, (info) => {
+      console.log(`Cloudie Neon API listening on ${info.port}`);
+    });
+
+export default app;
 
 let shuttingDown = false;
 const shutdown = async () => {
