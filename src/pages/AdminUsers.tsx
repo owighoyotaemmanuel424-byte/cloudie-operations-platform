@@ -13,8 +13,20 @@ import { Users } from "lucide-react";
 
 const MONEY = (minor: number) => `₦${(minor / 100).toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
 
+type UserRow = {
+  _id: string;
+  name: string;
+  email: string;
+  role: string;
+  status: string;
+  balanceNgn: number;
+  points: number;
+  workspaces: number;
+  createdAt: number;
+};
+
 export default function AdminUsers() {
-  const rows = useQuery(api.adminOverview.userRows);
+  const rows = useQuery(api.adminOverview.userRows) as UserRow[] | undefined;
   const [search, setSearch] = useState("");
   const [role, setRole] = useState("all");
   const [status, setStatus] = useState("all");
