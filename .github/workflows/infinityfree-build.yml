@@ -32,7 +32,7 @@ jobs:
 
       - name: Build production frontend
         env:
-          VITE_NEON_API_URL: ${{ vars.VITE_NEON_API_URL || 'https://cloudie-operations-api-stage.onrender.com' }}
+          VITE_NEON_API_URL: ${{ vars.VITE_NEON_API_URL || 'https://cloudie-glaa.onrender.com' }}
         run: npm run build
 
       - name: Prepare and verify static output

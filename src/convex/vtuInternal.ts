@@ -84,6 +84,96 @@ export async function consumeRateLimit(
 }
 
 /**
+ * Where a service code would actually be dispatched — for a lookup, not a buy.
+ *
+ * The recipient-validation action needs the provider's own code for a biller
+ * BEFORE a transaction exists, and it must be the code the purchase would use.
+ * Deriving it anywhere else would validate against one biller and charge
+ * another, which is worse than not validating at all.
+ *
+ * It therefore runs the SAME `routeProduct` the purchase runs, and returns
+ * scalars only. Internal, because the provider's code is not the client's
+ * business: the action needs it to build the lookup URL and the browser never
+ * receives it.
+ *
+ * Returns `null` when the product cannot be routed, which the action reports as
+ * "could not check" rather than "invalid" — an unroutable product is already
+ * refused at confirm time with a better message.
+ */
+export const resolveValidationTarget = internalQuery({
+  args: { serviceCode: v.string() },
+  handler: async (ctx, args) => {
+    const parsed = parseServiceCode(args.serviceCode);
+    if (!parsed) return null;
+
+    const productCode = canonicalProductCode(args.serviceCode);
+    if (!productCode) return null;
+
+    const route = await routeProduct(ctx, productCode);
+    if (!route.ok) return null;
+
+    let providerProductCode: string;
+    try {
+      providerProductCode = composeProviderProductCode(
+        route.winner.providerProductCode,
+        // `parseServiceCode` reports "no amount" as null, and the composer
+        // distinguishes undefined (nothing to substitute) from a number. A
+        // token-bearing code is therefore refused below rather than filled
+        // with "null".
+        parsed.amountNgn ?? undefined,
+      );
+    } catch {
+      // An amount-token route addressed without an amount. The purchase
+      // refuses this too; nothing is validated against a code we cannot build.
+      return null;
+    }
+
+    return {
+      provider: route.winner.provider,
+      providerProductCode,
+      productCode,
+      serviceType: route.product.serviceType,
+    };
+  },
+});
+
+/**
+ * Account-holder lookups allowed per minute, per user.
+ *
+ * A lookup is a METERED provider call — the aggregator counts look-ups against
+ * the same account budget the purchases come out of — and unlike a purchase it
+ * is cheap and repeatable, so the page triggers it on a debounce rather than
+ * once per customer action. That is exactly the shape of endpoint that gets
+ * hammered by an impatient retry or a script, so it is rate limited at the same
+ * layer and with the same mechanism as purchases.
+ *
+ * Higher than the purchase limit because a human legitimately checks a meter
+ * number more than once, and lower than anything a script would want.
+ */
+export const VALIDATION_RATE_LIMIT = 30;
+
+/**
+ * Spend one lookup from the caller's per-minute budget.
+ *
+ * A mutation rather than an inline check in the action, because a rate limit
+ * enforced by a read-then-write from an action is not a limit at all: two
+ * concurrent lookups both read the old count and both proceed. Convex mutations
+ * are serializable, so the read-modify-write inside `consumeRateLimit` is the
+ * only form of this that actually holds.
+ */
+export const consumeValidationRateLimit = internalMutation({
+  args: { userId: v.id("users") },
+  handler: async (ctx, args): Promise<boolean> => {
+    return await consumeRateLimit(
+      ctx,
+      `vtuValidate:${args.userId}`,
+      VALIDATION_RATE_LIMIT,
+      RATE_LIMIT_WINDOW_MS,
+    );
+  },
+});
+
+/**
  * Resolve the points cost for a service code: override first, conversion
  * second.
  *

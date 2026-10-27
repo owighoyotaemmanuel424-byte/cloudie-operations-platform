@@ -1,4 +1,6 @@
-const DEFAULT_API_URL = "https://cloudie-operations-api-stage.onrender.com";
+// Production API. The staging service is opt-in via VITE_NEON_API_URL, never a
+// silent default: a build without configuration must still reach production.
+const DEFAULT_API_URL = "https://cloudie-glaa.onrender.com";
 const API_BASE_URL = (
   (import.meta.env.VITE_NEON_API_URL as string | undefined) ||
   (import.meta.env.VITE_API_URL as string | undefined) ||
@@ -45,6 +47,25 @@ function readCsrfCookie() {
   const prefix = "cloudie_csrf=";
   const entry = document.cookie.split(";").map((value) => value.trim()).find((value) => value.startsWith(prefix));
   return entry ? decodeURIComponent(entry.slice(prefix.length)) : null;
+}
+
+/**
+ * The Neon API protects cookie-authenticated unsafe requests with a
+ * double-submit token: the value of the readable `cloudie_csrf` cookie must be
+ * echoed in the `X-CSRF-Token` header. Sign-out is the one nav action that
+ * calls an unsafe endpoint, so it must always carry this header.
+ */
+export const CSRF_HEADER = "X-CSRF-Token";
+
+/** Current double-submit token, or null before `GET /api/auth/csrf` has run. */
+export function getCsrfToken() {
+  return readCsrfCookie();
+}
+
+/** Fetches the CSRF cookie when the browser does not have one yet. */
+export async function ensureCsrfToken() {
+  await ensureCsrfCookie();
+  return readCsrfCookie();
 }
 
 export function getNeonToken() {
@@ -242,8 +263,8 @@ export const neonApi = {
   async updateUser(id: string, input: { role?: "admin" | "user" | "vendor"; is_suspended?: boolean; is_terminated?: boolean; reason?: string }) {
     return request<{ user: Record<string, unknown> }>(`/api/admin/users/${encodeURIComponent(id)}`, { method: "PATCH", body: JSON.stringify(input) });
   },
-  async adminAdjustWallet(id: string, input: { amount_ngn: number; description: string; idempotency_key?: string }) {
-    return request<{ balance_after_ngn: string | number }>(`/api/admin/users/${encodeURIComponent(id)}/wallet-adjust`, { method: "POST", body: JSON.stringify(input) });
+  async adminAdjustWallet(id: string, input: { amount_ngn?: number; points_delta?: number; description: string; idempotency_key?: string }) {
+    return request<{ balance_after_ngn: string | number; points_balance?: string | number; replayed?: boolean }>(`/api/admin/users/${encodeURIComponent(id)}/wallet-adjust`, { method: "POST", body: JSON.stringify(input) });
   },
   async adminShipments(limit = 50) {
     return request<{ shipments: Array<Record<string, unknown>> }>(`/api/admin/shipments?limit=${Math.min(100, Math.max(1, Math.floor(limit)))}`);

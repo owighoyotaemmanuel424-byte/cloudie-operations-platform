@@ -713,3 +713,208 @@ export const migratePairgateFromEnv = mutation({
     return { action: "inserted" as const, provider: "pairgate" };
   },
 });
+
+/**
+ * Seed the AidaPay row from environment variables.
+ *
+ * The deployed configuration path. An operator sets the provider's credentials
+ * once, as secrets, and this mutation seals them into the row the runtime
+ * resolves. Nothing else about how a credential is used changes: resolution
+ * still reads `vtuProviders` and NOTHING else, with no env fallback under any
+ * condition, so a row that is deleted or disabled fails loudly rather than
+ * being resurrected from a stale environment.
+ *
+ * This is deliberately the same shape as `migratePairgateFromEnv` and shares
+ * its central rule: RE-RUNNING IS SAFE. It fills what is MISSING and never
+ * overwrites a credential that is already sealed, so it can be run on every
+ * deploy without rotating a live key, and an operator who pasted a new key into
+ * the admin UI does not have it silently reverted by the next boot.
+ *
+ * Reads, in order of who owns each value:
+ *
+ *   AIDAPAY_API_KEY         required to create the row. The Bearer token from
+ *                           AidaPay's dashboard (Settings -> API Settings).
+ *   AIDAPAY_ACCOUNT_PIN     the 4-digit PIN AidaPay requires on every purchase.
+ *                           Without one the adapter refuses to dispatch, so a
+ *                           row created without it is created but flagged.
+ *   AIDAPAY_WEBHOOK_SECRET  optional, and DEFAULTS TO THE API KEY. AidaPay's
+ *                           documented callback signature is
+ *                           `hash_hmac('sha256', $body, $access_token)`, so the
+ *                           token IS the signing key; defaulting it here is what
+ *                           makes webhooks verify without a second copy of the
+ *                           same secret. Setting it explicitly is for the case
+ *                           where the signing key is rotated separately.
+ *   AIDAPAY_STATUS          optional: active | sandbox | disabled. Defaults to
+ *                           `sandbox`, because AidaPay publishes no sandbox and
+ *                           a new row must be promoted to live deliberately.
+ *
+ * The provider's CONSTANTS — origin, health path, auth header and scheme,
+ * signature header, timeout — come from `PROVIDER_PRESETS` rather than from the
+ * environment. They are properties of AidaPay, not of this deployment, and
+ * letting a deploy override them is how `baseUrl` came to carry a `/api/v1`
+ * prefix that produced `.../api/v1/api/v1/buy` on every purchase.
+ *
+ * A missing API key is REPORTED (`action: "no_env"`) rather than thrown. Convex
+ * redacts a thrown error's message in production, which would leave the
+ * operator with "Server Error" and a request id while the one actionable
+ * sentence stayed on the server.
+ */
+export const migrateAidaPayFromEnv = mutation({
+  args: {},
+  handler: async (ctx) => {
+    const { adminId } = await requireAdmin(ctx);
+    const preset = PROVIDER_PRESETS["aidapay"];
+    if (!preset) throw new Error("No aidapay preset is registered.");
+
+    const now = Date.now();
+    const existing = await ctx.db
+      .query("vtuProviders")
+      .withIndex("by_name", (q) => q.eq("name", preset.name))
+      .unique();
+
+    const envKey = (process.env.AIDAPAY_API_KEY ?? "").trim();
+
+    // An existing row with a sealed key needs no environment at all: this can
+    // legitimately be run to repair a hand-edited `baseUrl` on a deployment
+    // that keeps its credential only in the database.
+    if (!envKey && !existing?.encryptedApiKey) {
+      await auditLog(ctx, adminId, {
+        action: "vtu_provider_migration_skipped",
+        resource: "vtuProvider",
+        resourceId: preset.name,
+        reason:
+          "AIDAPAY_API_KEY is not configured and no credential is stored; nothing was written",
+      });
+      // ONE return shape for every branch, including this one. A union whose
+      // members carry different fields forces every caller to narrow before it
+      // can read a result, and the alternative — callers casting — is how a
+      // status report starts lying.
+      return {
+        action: "no_env" as const,
+        provider: preset.name,
+        filled: { apiKey: false, accountPin: false, webhookSecret: false },
+        hasAccountPin: false,
+      };
+    }
+
+    const envPin = (process.env.AIDAPAY_ACCOUNT_PIN ?? "").trim();
+    // Documented algorithm: HMAC-SHA256 over the raw body keyed by the access
+    // token. So the token is the default signing key, and a separate value is
+    // only needed when it is rotated independently.
+    const envWebhookSecret = (process.env.AIDAPAY_WEBHOOK_SECRET ?? "").trim()
+      || envKey;
+
+    const statusFromEnv = (process.env.AIDAPAY_STATUS ?? "").trim().toLowerCase();
+    const status = (VTU_PROVIDER_STATUSES as readonly string[]).includes(statusFromEnv)
+      ? (statusFromEnv as (typeof VTU_PROVIDER_STATUSES)[number])
+      : undefined;
+
+    // Every constant re-asserted, exactly as `applyPreset` does. The two paths
+    // read the same module, so a row seeded from env and a row configured in
+    // admin are indistinguishable afterwards.
+    const constants = {
+      displayName: preset.displayName,
+      baseUrl: preset.baseUrl,
+      healthPath: preset.healthPath,
+      authHeader: preset.authHeader,
+      authScheme: preset.authScheme,
+      callbackSignatureHeader: preset.callbackSignatureHeader,
+      timeoutMs: preset.timeoutMs,
+    };
+
+    if (existing) {
+      const patch: Record<string, unknown> = {
+        ...constants,
+        updatedAt: now,
+        updatedBy: adminId,
+      };
+
+      // FILL, NEVER OVERWRITE. A credential already sealed was either pasted by
+      // an operator or written by an earlier run of this mutation, and either
+      // way it is the more recent statement of intent than the environment.
+      let keyFilled = false;
+      let pinFilled = false;
+      let secretFilled = false;
+      if (!existing.encryptedApiKey && envKey) {
+        patch.encryptedApiKey = await sealOrThrow(envKey);
+        keyFilled = true;
+      }
+      if (!existing.encryptedAccountPin && envPin) {
+        patch.encryptedAccountPin = await sealOrThrow(envPin);
+        pinFilled = true;
+      }
+      if (!existing.encryptedWebhookSecret && envWebhookSecret) {
+        patch.encryptedWebhookSecret = await sealOrThrow(envWebhookSecret);
+        secretFilled = true;
+      }
+      if (status !== undefined) patch.status = status;
+
+      await ctx.db.patch(existing._id, patch);
+
+      await auditLog(ctx, adminId, {
+        action: "vtu_provider_migrated_from_env",
+        resource: "vtuProvider",
+        resourceId: preset.name,
+        before: { baseUrl: existing.baseUrl, healthPath: existing.healthPath ?? null },
+        after: {
+          ...constants,
+          apiKeyFilled: keyFilled,
+          accountPinFilled: pinFilled,
+          webhookSecretFilled: secretFilled,
+          status: status ?? existing.status,
+        },
+        reason: "Re-asserted preset constants; missing credentials filled from environment",
+      });
+
+      return {
+        action: "updated" as const,
+        provider: preset.name,
+        filled: { apiKey: keyFilled, accountPin: pinFilled, webhookSecret: secretFilled },
+        hasAccountPin: Boolean(existing.encryptedAccountPin || pinFilled),
+      };
+    }
+
+    // Guaranteed non-empty: the guard above refused unless a key was supplied
+    // OR one is already stored, and an existing row returned above.
+    const sealedApiKey = await sealOrThrow(envKey);
+
+    await ctx.db.insert("vtuProviders", {
+      name: preset.name,
+      ...constants,
+      // Sandbox unless the environment explicitly says otherwise. AidaPay has
+      // no sandbox environment, so the only safe default for a row that has
+      // never answered a connection test is "do not route live money at it".
+      status: status ?? "sandbox",
+      encryptedApiKey: sealedApiKey,
+      encryptedAccountPin: envPin ? await sealOrThrow(envPin) : undefined,
+      encryptedWebhookSecret: envWebhookSecret
+        ? await sealOrThrow(envWebhookSecret)
+        : undefined,
+      priority: preset.priority,
+      createdAt: now,
+      updatedAt: now,
+      updatedBy: adminId,
+    });
+
+    await auditLog(ctx, adminId, {
+      action: "vtu_provider_migrated_from_env",
+      resource: "vtuProvider",
+      resourceId: preset.name,
+      after: {
+        ...constants,
+        status: status ?? "sandbox",
+        hasApiKey: true,
+        hasAccountPin: Boolean(envPin),
+        hasWebhookSecret: Boolean(envWebhookSecret),
+      },
+      reason: "Seeded from AIDAPAY_* environment variables; env is no longer read at runtime",
+    });
+
+    return {
+      action: "inserted" as const,
+      provider: preset.name,
+      filled: { apiKey: true, accountPin: Boolean(envPin), webhookSecret: true },
+      hasAccountPin: Boolean(envPin),
+    };
+  },
+});

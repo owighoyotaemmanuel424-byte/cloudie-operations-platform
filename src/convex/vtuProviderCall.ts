@@ -20,6 +20,7 @@ import { tryDecrypt, isSecretError } from "./lib/encryption";
 import { getAdapter } from "./vtuRegistry";
 import { composeAuthHeader } from "./vtuShared";
 import type { ProviderCallOptions, VtuProviderAdapter } from "./vtuShared";
+import { parseServiceCode, validateCustomerIdentifier } from "../lib/vtu";
 
 const DEFAULT_TIMEOUT_MS = 20_000;
 
@@ -68,14 +69,19 @@ export type ResolvedCall =
 async function resolveCall(
   ctx: any,
   name: string,
-  mode: "purchase" | "verification" | "reconcile",
+  mode: "purchase" | "verification" | "reconcile" | "validate",
 ): Promise<ResolvedCall> {
+  // `validate` resolves EXACTLY as a purchase does — a live provider only —
+  // because it is a lookup a customer runs on the way to buying. Answering a
+  // destination question from a sandbox or disabled credential would name an
+  // account the customer cannot then pay, and routing already refuses those
+  // products, so this cannot fire for a product that would have been buyable.
   const resolution: any = await ctx.runQuery(
-    mode === "purchase"
-      ? internal.vtuProviderConfig.resolveForPurchase
-      : mode === "verification"
-        ? internal.vtuProviderConfig.resolveForVerification
-        : internal.vtuProviderConfig.resolveForReconcile,
+    mode === "verification"
+      ? internal.vtuProviderConfig.resolveForVerification
+      : mode === "reconcile"
+        ? internal.vtuProviderConfig.resolveForReconcile
+        : internal.vtuProviderConfig.resolveForPurchase,
     { name },
   );
 
@@ -99,10 +105,23 @@ async function resolveCall(
   //                `fail()` path settles and refunds, so the points come back
   //                in the same action instead of stranding in `pending`;
   //   reconcile -> the sweep escalates without consuming a rate-limited call;
+  //   validate  -> the lookup is refused with a typed code and nothing is
+  //                charged, because nothing has been charged yet;
   //   verification -> no method is needed to OPEN a webhook secret, so the
   //                guard for that one lives where the method is called.
+  //
+  // `verifyRecipient` is OPTIONAL on the interface, and an adapter without one
+  // is a provider with no lookup endpoint rather than a broken adapter. The
+  // guard here therefore produces `ADAPTER_INCOMPLETE`, which the caller
+  // reports as "this provider cannot check that" and never as a refusal.
   const requiredMethod =
-    mode === "purchase" ? "purchase" : mode === "reconcile" ? "verify" : null;
+    mode === "purchase"
+      ? "purchase"
+      : mode === "reconcile"
+        ? "verify"
+        : mode === "validate"
+          ? "verifyRecipient"
+          : null;
   if (requiredMethod && typeof (adapter as any)[requiredMethod] !== "function") {
     return { ok: false, code: "ADAPTER_INCOMPLETE" };
   }
@@ -205,6 +224,125 @@ export async function openForVerification(ctx: any, name: string): Promise<Resol
 export async function openForReconcile(ctx: any, name: string): Promise<ResolvedCall> {
   return resolveCall(ctx, name, "reconcile");
 }
+
+/**
+ * Open a key for a recipient lookup (`adapter.verifyRecipient`).
+ *
+ * Read-only like the reconcile mode: it authenticates as the API with the API
+ * key and deliberately never opens the account PIN, so a "whose meter is
+ * this?" question cannot put a spend credential in memory.
+ */
+export async function openForValidate(ctx: any, name: string): Promise<ResolvedCall> {
+  return resolveCall(ctx, name, "validate");
+}
+
+// ─── Recipient validation ───────────────────────────────────────────
+
+/**
+ * The answer to "whose account is this?", as the page needs it.
+ *
+ * Three states rather than a boolean, because they call for three different
+ * things on screen:
+ *
+ *   checked && valid     show the name and let the customer confirm.
+ *   checked && !valid    the provider says no such account; do not proceed.
+ *   !checked             we could not ask. Say nothing alarming, and let the
+ *                        purchase go ahead — the provider remains the
+ *                        authority, and refusing a sale because a lookup was
+ *                        unavailable would be a worse failure than the typo it
+ *                        was meant to catch.
+ */
+export interface RecipientValidationResult {
+  checked: boolean;
+  valid: boolean;
+  customerName?: string;
+  message?: string;
+  /** Why no verdict was reached. Absent when `checked` is true. */
+  reason?: string;
+}
+
+/**
+ * Look up the account holder for a destination, before anything is charged.
+ *
+ * CUSTOMER-facing, not admin-gated: a customer must be able to check their own
+ * meter number, and the lookup spends nothing. It is authenticated and rate
+ * limited rather than public, because it is a metered provider call that would
+ * otherwise be a free oracle for enumerating meter numbers.
+ *
+ * It discloses the NAME the provider returns for the customer's own input and
+ * nothing else — no provider name, no provider code, no credential. The
+ * provider code is resolved and used entirely inside this action.
+ */
+export const validateVtuRecipient = action({
+  args: { serviceCode: v.string(), customerIdentifier: v.string() },
+  handler: async (ctx, args): Promise<RecipientValidationResult> => {
+    const userId = await getAuthUserId(ctx as any);
+    if (!userId) return { checked: false, valid: false, reason: "AUTH_REQUIRED" };
+
+    // Shape first, provider second. A malformed number is answered locally in
+    // both senses: no provider call is spent, and the message is the same one
+    // the purchase page already shows.
+    const parsed = parseServiceCode(args.serviceCode);
+    if (!parsed) return { checked: false, valid: false, reason: "BAD_SERVICE_CODE" };
+
+    const idCheck = validateCustomerIdentifier(parsed.serviceType, args.customerIdentifier);
+    if (!idCheck.ok) {
+      return { checked: false, valid: false, reason: "BAD_IDENTIFIER", message: idCheck.error };
+    }
+
+    const allowed = await ctx.runMutation(
+      internal.vtuInternal.consumeValidationRateLimit,
+      { userId: userId as any },
+    );
+    if (!allowed) {
+      return {
+        checked: false,
+        valid: false,
+        reason: "RATE_LIMITED",
+        message: "Too many checks in a moment. Please try again shortly.",
+      };
+    }
+
+    const target: any = await ctx.runQuery(
+      internal.vtuInternal.resolveValidationTarget,
+      { serviceCode: args.serviceCode },
+    );
+    if (!target) return { checked: false, valid: false, reason: "NO_ROUTE" };
+
+    const opened = await openForValidate(ctx, target.provider);
+    if (!opened.ok) return { checked: false, valid: false, reason: opened.code };
+
+    // Optional on the interface. Its absence is a fact about the provider, not
+    // a fault, and it must never be reported as an invalid destination.
+    const verify = opened.adapter.verifyRecipient;
+    if (typeof verify !== "function") {
+      return { checked: false, valid: false, reason: "NOT_SUPPORTED" };
+    }
+
+    try {
+      const check = await verify.call(opened.adapter, {
+        serviceType: target.serviceType,
+        productCode: target.productCode,
+        providerProductCode: target.providerProductCode,
+        customerIdentifier: idCheck.value,
+      }, opened.opts);
+
+      if (!check) return { checked: false, valid: false, reason: "NO_VERDICT" };
+
+      return {
+        checked: true,
+        valid: check.valid,
+        ...(check.customerName ? { customerName: check.customerName } : {}),
+        ...(check.message ? { message: check.message } : {}),
+      };
+    } catch {
+      // A thrown error here is a transport fault. Reported as "could not ask",
+      // deliberately NOT as a rejection: the provider is the authority on
+      // whether the destination exists, and this action is a courtesy check.
+      return { checked: false, valid: false, reason: "LOOKUP_FAILED" };
+    }
+  },
+});
 
 // ─── Test connection ────────────────────────────────────────────────
 

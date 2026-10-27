@@ -1,0 +1,37 @@
+name: regen-lock
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "package.json"
+      - "bunfig.toml"
+
+permissions:
+  contents: write
+
+jobs:
+  regen:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      - run: bun install
+      - name: Commit lockfile if changed
+        run: |
+          if ! git diff --quiet -- bun.lock; then
+            git config user.name "cloudie-ci"
+            git config user.email "ci@cloudie.local"
+            git add bun.lock
+            git commit -m "chore: regenerate bun.lock"
+            # Other main-branch commits can land while dependencies resolve.
+            git fetch origin main
+            git rebase origin/main
+            git push
+          else
+            echo "bun.lock already up to date"
+          fi

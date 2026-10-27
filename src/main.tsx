@@ -21,7 +21,8 @@ import AdminLogin from "./pages/AdminLogin.tsx";
 import NotFound from "./pages/NotFound.tsx";
 import Dashboard from "./pages/Dashboard.tsx";
 import DesignSystem from "./pages/DesignSystem.tsx";
-import { AppLayout } from "./components/AppLayout.tsx";
+import { AppShell } from "./components/nav/AppShell";
+import { SessionProvider } from "./hooks/useSession";
 
 const CHUNK_RELOAD_KEY = "cloudie:chunk-reload";
 
@@ -390,6 +391,9 @@ createRoot(document.getElementById("root")!).render(
       </ToolbarErrorBoundary>
       <ConvexAuthProvider client={convex}>
         <ThemeProvider>
+          {/* Above the router on purpose: a route change must never remount the
+              session, and every guard and the shell read this one source. */}
+          <SessionProvider>
           <BrowserRouter>
             <PlatformBranding />
             <RouteSyncer />
@@ -436,7 +440,7 @@ createRoot(document.getElementById("root")!).render(
                 <Route path="/t/:subdomain/settings" element={<PortalSettings />} />
 
                 {/* Authenticated app routes with layout */}
-                <Route element={<RequireAuth><AppLayout /></RequireAuth>}>
+                <Route element={<RequireAuth><AppShell /></RequireAuth>}>
                   <Route path="/dashboard" element={<Dashboard />} />
                   {/* `/app` is the Master Prompt's name for the personal workspace dashboard. */}
                   <Route path="/app" element={<Dashboard />} />
@@ -568,6 +572,7 @@ createRoot(document.getElementById("root")!).render(
             {/* Config-driven support launcher — hidden on admin + tenant banking surfaces */}
             <SupportWidget />
           </BrowserRouter>
+          </SessionProvider>
           <Toaster />
         </ThemeProvider>
       </ConvexAuthProvider>

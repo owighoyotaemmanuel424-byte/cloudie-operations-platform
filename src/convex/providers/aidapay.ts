@@ -57,6 +57,8 @@ import type {
   ProviderCallbackEvent,
   ProviderPurchaseRequest,
   ProviderPurchaseResult,
+  ProviderRecipientCheck,
+  ProviderRecipientRequest,
   VtuProviderAdapter,
 } from "../vtuShared";
 import type { VtuDelivery } from "../vtuSchema/types";
@@ -77,6 +79,17 @@ function purchasePath(): string {
  */
 function transactionPath(ref: string): string {
   return `/api/v1/transaction/${encodeURIComponent(ref)}`;
+}
+
+/**
+ * AidaPay's account-holder lookup, by provider code and destination.
+ *
+ * Read-only, and the only pre-purchase call in this adapter. It answers "whose
+ * meter / smartcard / number is this?", which is what stops a typo becoming a
+ * delivered top-up for a stranger. It never spends, so it takes no PIN.
+ */
+function validationPath(providerCode: string, recipient: string): string {
+  return `/api/v1/validation/${encodeURIComponent(providerCode)}/${encodeURIComponent(recipient)}`;
 }
 
 /** AidaPay's `provider_code` for a Nigerian mobile network. */
@@ -280,6 +293,63 @@ export function mapPurchaseResponse(
   };
 }
 
+// ─── Recipient validation ────────────────────────────────────────────
+
+/**
+ * Map AidaPay's validation response onto the provider-agnostic verdict.
+ *
+ * DEFENSIVE ON PURPOSE, and for a different reason than the purchase mappers.
+ * AidaPay documents the ENDPOINT but not a field-level schema for its reply, so
+ * the name is looked for under every plausible key rather than one. Returning
+ * `null` when nothing recognisable is present is the important half: a caller
+ * that treated "unreadable" as "invalid" would refuse purchases whenever the
+ * provider was vague, and one that treated it as "valid" would render an empty
+ * name as a confirmed one. Neither guess is made here.
+ */
+export function mapValidationResponse(
+  body: unknown,
+): ProviderRecipientCheck | null {
+  const b = (body ?? {}) as Record<string, unknown>;
+  const d = dataOf(body);
+
+  const name =
+    str(d.customer_name) ??
+    str(d.customerName) ??
+    str(d.account_name) ??
+    str(d.accountName) ??
+    str(d.meter_name) ??
+    str(d.smartcard_name) ??
+    str(d.receiver_name) ??
+    str(d.name) ??
+    str(b.customer_name) ??
+    str(b.customerName) ??
+    str(b.name);
+
+  if (name !== undefined) return { valid: true, customerName: name };
+
+  // No name, but an explicit negative. AidaPay signals a destination it does
+  // not recognise with `success: false` and a message rather than a 404.
+  const flag = d.valid ?? d.success ?? b.valid ?? b.success;
+  if (flag === false) {
+    return {
+      valid: false,
+      message: str(d.message) ?? str(b.message) ?? "The provider did not recognise that number",
+    };
+  }
+
+  // A terminal status word is a verdict even without a name: `Cancelled` on a
+  // lookup means the lookup could not be honoured.
+  const verdict = mapAidaPayStatus(d.status ?? b.status);
+  if (verdict.kind === "failed") {
+    return {
+      valid: false,
+      message: str(d.message) ?? str(b.message) ?? "The provider rejected this lookup",
+    };
+  }
+
+  return null;
+}
+
 // ─── Signature header ────────────────────────────────────────────────
 
 /**
@@ -422,6 +492,68 @@ export const aidapayAdapter: VtuProviderAdapter = {
       // carrier, so the caller must NOT refund on this path.
       const message = error instanceof Error ? error.message : "Network error contacting AidaPay";
       return { status: "unknown", message, raw: { thrown: message } };
+    } finally {
+      clearTimeout(timer);
+    }
+  },
+
+  /**
+   * Account-holder lookup, before any money moves.
+   *
+   * AidaPay's `GET /validation/{provider_code}/{recipient}`. Three outcomes,
+   * and the difference between the last two is the whole reason this method
+   * returns a nullable verdict rather than a boolean:
+   *
+   *   a name           -> the destination exists; show it and let the customer
+   *                       confirm they are paying the right account.
+   *   a negative       -> the provider says no such account. The purchase will
+   *                       be refused, so the page says so first.
+   *   `null`           -> we could not ask: a refused credential, a 302 to the
+   *                       account page, an unsupported biller, a timeout. NOT
+   *                       a reason to block a purchase.
+   *
+   * `redirect: "manual"`, for the same reason the catalog sync sets it: AidaPay
+   * answers an unauthenticated request with a 302 rather than a 401, and
+   * following it lands on HTML.
+   */
+  async verifyRecipient(
+    req: ProviderRecipientRequest,
+    opts: ProviderCallOptions,
+  ): Promise<ProviderRecipientCheck | null> {
+    const providerCode = (req.providerProductCode ?? "").trim();
+    const recipient = (req.customerIdentifier ?? "").trim();
+    if (providerCode === "" || recipient === "") return null;
+
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), opts.timeoutMs);
+
+    try {
+      const response = await opts.fetchImpl(
+        `${opts.baseUrl.replace(/\/+$/, "")}${validationPath(providerCode, recipient)}`,
+        {
+          method: "GET",
+          headers: { accept: "application/json", ...composeAuthHeader(opts) },
+          redirect: "manual",
+          signal: controller.signal,
+        },
+      );
+
+      // A non-2xx is a refusal, never a verdict about the destination. Reading
+      // it as "invalid" would hard-block a purchase because a token was
+      // rotated or a biller lost its lookup support.
+      if (!response.ok) return null;
+
+      const text = await response.text();
+      if (!text) return null;
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(text);
+      } catch {
+        return null;
+      }
+      return mapValidationResponse(parsed);
+    } catch {
+      return null;
     } finally {
       clearTimeout(timer);
     }

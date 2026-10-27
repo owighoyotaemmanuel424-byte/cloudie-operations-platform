@@ -31,23 +31,15 @@ import {
 import {
   ArrowLeft,
   ArrowRight,
-  CheckCircle2,
   Coins,
   Contact,
-  CreditCard,
-  FileCheck2,
-  GraduationCap,
-  Lightbulb,
   Loader2,
   Lock,
   Plus,
-  Radio,
   ScanLine,
-  Search,
+  ShieldCheck,
   Sparkles,
-  Tv,
-  Wifi,
-  Zap,
+  TriangleAlert,
 } from "lucide-react";
 import { toast } from "sonner";
 import type { Id } from "@/convex/_generated/dataModel";
@@ -74,11 +66,55 @@ export function safeFormatNgn(amount?: number | null): string {
   return formatNgn(amount);
 }
 
-const BILL_SERVICE_TYPES = ["data", "cable", "electricity", "exam"] as const;
+/** Every service type this screen can sell, so a browse-page link to any of
+ *  them lands on a coherent form rather than the wrong group's plan list. */
+const BILL_SERVICE_TYPES = ["data", "cable", "electricity", "exam", "betting"] as const;
 
 const AMOUNT_PRESETS = [500, 1000, 2000, 5000, 10000, 20000] as const;
 
 const STEP_LABELS = ["Choose", "Details", "Confirm"] as const;
+
+/**
+ * The price to show for a product, in the wallet's own currency.
+ *
+ * The wallet is debited in naira, so a points figure here would quote a second
+ * currency the customer never pays in. A fixed-price product has one number; an
+ * amount-priced one shows the range the catalog declares; a product priced only
+ * by a routing override is converted at the server's rate, never one invented
+ * here.
+ */
+function productPriceLabel(
+  product: {
+    fixedNgn: number | null;
+    fixedPoints: number | null;
+    indicativeMinNgn: number | null;
+    indicativeMaxNgn: number | null;
+  },
+  ngnPerPoint: number,
+): string {
+  if (typeof product.fixedNgn === "number" && product.fixedNgn > 0) {
+    return formatNgn(product.fixedNgn);
+  }
+  if (
+    typeof product.indicativeMinNgn === "number" &&
+    typeof product.indicativeMaxNgn === "number"
+  ) {
+    return `${formatNgn(product.indicativeMinNgn)} – ${formatNgn(product.indicativeMaxNgn)}`;
+  }
+  if (typeof product.fixedPoints === "number" && product.fixedPoints > 0) {
+    return formatNgn(product.fixedPoints * ngnPerPoint);
+  }
+  return "Select";
+}
+
+/** The same price, as an option suffix — empty when there is nothing to say. */
+function priceSuffix(
+  product: Parameters<typeof productPriceLabel>[0],
+  ngnPerPoint: number,
+): string {
+  const label = productPriceLabel(product, ngnPerPoint);
+  return label === "Select" ? "" : ` — ${label}`;
+}
 
 export default function VtuBills({
   initialCategory,
@@ -95,20 +131,26 @@ export default function VtuBills({
   );
   const balance = useQuery(api.wallet.getBalance);
   const purchase = useAction(api.vtuHttp.purchaseVtu);
+  const validateRecipient = useAction(api.vtuProviderCall.validateVtuRecipient);
+  const ngnPerPoint = catalog?.ngnPerPoint ?? 1;
 
   const [category, setCategory] = useState<string | null>(
     initialCategory ?? searchParams.get("category"),
   );
+  const [recipientCheck, setRecipientCheck] = useState<{
+    checked: boolean;
+    valid: boolean;
+    customerName?: string;
+    message?: string;
+    reason?: string;
+  } | null>(null);
+  const [checkingRecipient, setCheckingRecipient] = useState(false);
   const [identifier, setIdentifier] = useState("");
   const [amount, setAmount] = useState("");
-  const [meterType, setMeterType] = useState<"prepaid" | "postpaid">("prepaid");
   const [quantity, setQuantity] = useState(1);
   const [confirmed, setConfirmed] = useState(false);
   const [transactionId, setTransactionId] = useState<Id<"vtuTransactions"> | null>(null);
   const [submitting, setSubmitting] = useState(false);
-  const [planSearch, setPlanSearch] = useState("");
-  const [meterVerified, setMeterVerified] = useState(false);
-  const [verifyingMeter, setVerifyingMeter] = useState(false);
 
   const tx = useQuery(
     api.vtuInternal.getTransaction,
@@ -125,8 +167,22 @@ export default function VtuBills({
     [catalog, initialCategory],
   );
 
-  const activeGroup =
-    groups.find((group) => group.serviceType === category) ?? groups[0] ?? null;
+  /**
+   * The group whose products the screen is choosing from.
+   *
+   * A deep link carries a product code and no category, so the loaded
+   * product's own service type decides the group. Without that, opening a
+   * cable plan from the browse page would list the data plans in its place.
+   */
+  const activeGroup = useMemo(
+    () =>
+      groups.find(
+        (group) => group.serviceType === (detail?.serviceType ?? category),
+      ) ??
+      groups[0] ??
+      null,
+    [groups, category, detail],
+  );
 
   useEffect(() => {
     if (!initialCategory || productCode || !activeGroup || activeGroup.products.length === 0) {
@@ -175,6 +231,20 @@ export default function VtuBills({
   const preview = useQuery(api.vtu.previewCost, serviceCode ? { serviceCode } : "skip");
 
   const priceNgn = preview?.chargeNgn ?? detail?.priceNgn ?? null;
+  /** What the customer actually receives. A routing override can price the
+   *  purchase below (or above) its face value, so the breakdown derives the
+   *  difference instead of asserting a zero fee. */
+  const serviceValueNgn = detail
+    ? detail.requiresAmount
+      ? amountValid
+        ? amountNgn
+        : null
+      : detail.priceNgn
+    : null;
+  const feeNgn =
+    priceNgn !== null && serviceValueNgn !== null && priceNgn > serviceValueNgn
+      ? priceNgn - serviceValueNgn
+      : 0;
   const affordable = priceNgn === null ? true : (balance ?? 0) >= priceNgn;
   const inFlight = tx ? tx.status === "pending" || tx.status === "processing" : false;
   const locked = submitting || inFlight;
@@ -203,11 +273,77 @@ export default function VtuBills({
     return AMOUNT_PRESETS.filter((value) => value >= min && value <= max);
   }, [detail]);
 
+  /**
+   * Pre-purchase account lookup.
+   *
+   * A meter or smartcard number is the one field on this page the customer
+   * cannot verify by eye, and a wrong one delivers the top-up to a stranger
+   * with nothing to refund. The provider can name the account holder, so it is
+   * asked once the destination LOOKS well-formed — debounced, with superseded
+   * results discarded, so typing a twelve-digit number costs one call rather
+   * than twelve.
+   *
+   * Every outcome is non-blocking EXCEPT a provider that positively says the
+   * account does not exist. "We could not ask" leaves the purchase exactly as
+   * it was: the provider remains the authority at dispatch, and refusing a sale
+   * because a LOOKUP was unavailable would be a worse failure than the typo
+   * this guards against.
+   *
+   * The dependencies are primitives on purpose. `detail` is a fresh object each
+   * time its query re-runs, so depending on it would re-ask the provider for a
+   * number the customer had not touched.
+   */
+  const serviceType = detail?.serviceType ?? null;
+  useEffect(() => {
+    // No product, no priceable code, or a destination that is not yet a valid
+    // shape: nothing to ask about.
+    if (!serviceType || !serviceCode) {
+      setRecipientCheck(null);
+      setCheckingRecipient(false);
+      return;
+    }
+    const local = validateCustomerIdentifier(serviceType, identifier);
+    if (!local.ok) {
+      setRecipientCheck(null);
+      setCheckingRecipient(false);
+      return;
+    }
+
+    let cancelled = false;
+    setCheckingRecipient(true);
+    const timer = setTimeout(() => {
+      validateRecipient({ serviceCode, customerIdentifier: local.value })
+        .then((result) => {
+          if (!cancelled) setRecipientCheck(result);
+        })
+        .catch(() => {
+          if (!cancelled) setRecipientCheck(null);
+        })
+        .finally(() => {
+          if (!cancelled) setCheckingRecipient(false);
+        });
+    }, 500);
+
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [serviceType, serviceCode, identifier, validateRecipient]);
+
+  /**
+   * A destination the provider positively rejected.
+   *
+   * Only this blocks. An unchecked destination is not a rejected one, and
+   * treating a failed lookup as a rejection would stop customers buying
+   * because a provider endpoint was slow.
+   */
+  const recipientRejected = recipientCheck?.checked === true && recipientCheck.valid === false;
+
   function choose(code: string) {
     setIdentifier("");
+    setRecipientCheck(null);
     setAmount("");
     setConfirmed(false);
-    setMeterVerified(false);
     setSearchParams({ product: code }, { replace: false });
   }
 
@@ -216,26 +352,7 @@ export default function VtuBills({
     setConfirmed(false);
     setIdentifier("");
     setAmount("");
-    setMeterVerified(false);
     setSearchParams({}, { replace: true });
-  }
-
-  function handleVerifyMeter() {
-    if (!identifier.trim()) {
-      toast.error("Please enter a meter number first.");
-      return;
-    }
-    const check = validateCustomerIdentifier("electricity", identifier);
-    if (!check.ok) {
-      toast.error(check.error);
-      return;
-    }
-    setVerifyingMeter(true);
-    setTimeout(() => {
-      setVerifyingMeter(false);
-      setMeterVerified(true);
-      toast.success("Meter validated successfully.");
-    }, 600);
   }
 
   function continueToConfirm() {
@@ -265,6 +382,16 @@ export default function VtuBills({
     }
     if (!affordable) {
       toast.error("Insufficient NGN wallet balance.");
+      return;
+    }
+    // Last line of defence before a confirm screen that charges. The effect
+    // above has usually already answered; this catches the case where the
+    // customer edits the number and taps Continue inside the debounce window.
+    if (recipientRejected) {
+      toast.error(
+        recipientCheck?.message ??
+          "The provider does not recognise that number. Check it and try again.",
+      );
       return;
     }
     setConfirmed(true);
@@ -299,17 +426,6 @@ export default function VtuBills({
       setSubmitting(false);
     }
   }
-
-  const filteredProducts = useMemo(() => {
-    const list = activeGroup?.products ?? [];
-    if (!planSearch.trim()) return list;
-    const q = planSearch.toLowerCase();
-    return list.filter(
-      (p) =>
-        (p.displayName || "").toLowerCase().includes(q) ||
-        (p.productCode || "").toLowerCase().includes(q),
-    );
-  }, [activeGroup, planSearch]);
 
   return (
     <VtuShell>
@@ -495,7 +611,7 @@ export default function VtuBills({
                               </span>
                             </span>
                             <span className="shrink-0 text-xs font-semibold tabular-nums text-foreground">
-                              {safeFormatPoints(product?.fixedPoints)}
+                              {productPriceLabel(product, ngnPerPoint)}
                             </span>
                             <ArrowRight className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
                           </button>
@@ -611,7 +727,7 @@ export default function VtuBills({
                             .map((p) => (
                               <option key={p.productCode} value={p.productCode}>
                                 {p.displayName || p.productCode}
-                                {p.fixedNgn ? ` — ${safeFormatNgn(p.fixedNgn)}` : p.fixedPoints ? ` — ${safeFormatPoints(p.fixedPoints)}` : ""}
+                                {priceSuffix(p, ngnPerPoint)}
                               </option>
                             ))}
                         </select>
@@ -638,33 +754,10 @@ export default function VtuBills({
                             .map((p) => (
                               <option key={p.productCode} value={p.productCode}>
                                 {p.displayName || p.productCode}
+                                {priceSuffix(p, ngnPerPoint)}
                               </option>
                             ))}
                         </select>
-                      </div>
-
-                      <div>
-                        <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                          Meter Type
-                        </p>
-                        <div className="flex rounded-2xl border border-border bg-surface-2 p-1">
-                          {(["prepaid", "postpaid"] as const).map((kind) => (
-                            <button
-                              key={kind}
-                              type="button"
-                              onClick={() => setMeterType(kind)}
-                              disabled={locked}
-                              className={cn(
-                                "min-h-10 flex-1 rounded-xl text-xs font-semibold capitalize transition-all",
-                                meterType === kind
-                                  ? "bg-primary text-primary-foreground shadow-xs"
-                                  : "text-muted-foreground hover:text-foreground",
-                              )}
-                            >
-                              {kind}
-                            </button>
-                          ))}
-                        </div>
                       </div>
                     </div>
                   )}
@@ -688,7 +781,7 @@ export default function VtuBills({
                             .map((p) => (
                               <option key={p.productCode} value={p.productCode}>
                                 {p.displayName || p.productCode}
-                                {p.fixedNgn ? ` — ${safeFormatNgn(p.fixedNgn)}` : p.fixedPoints ? ` — ${safeFormatPoints(p.fixedPoints)}` : ""}
+                                {priceSuffix(p, ngnPerPoint)}
                               </option>
                             ))}
                         </select>
@@ -715,7 +808,7 @@ export default function VtuBills({
                             .map((p) => (
                               <option key={p.productCode} value={p.productCode}>
                                 {p.displayName || p.productCode}
-                                {p.fixedNgn ? ` — ${safeFormatNgn(p.fixedNgn)}` : p.fixedPoints ? ` — ${safeFormatPoints(p.fixedPoints)}` : ""}
+                                {priceSuffix(p, ngnPerPoint)}
                               </option>
                             ))}
                         </select>
@@ -735,25 +828,12 @@ export default function VtuBills({
                               ? "Smartcard / IUC Number"
                               : detail.customerIdentifierLabel}
                       </Label>
-                      {detail.serviceType === "electricity" && (
-                        <button
-                          type="button"
-                          onClick={handleVerifyMeter}
-                          disabled={verifyingMeter || !identifier.trim()}
-                          className="text-xs font-semibold text-primary transition-colors hover:underline disabled:opacity-50"
-                        >
-                          {verifyingMeter ? "Verifying…" : "Verify Meter"}
-                        </button>
-                      )}
                     </div>
                     <div className="relative">
                       <Input
                         id="bill-target"
                         value={identifier}
-                        onChange={(e) => {
-                          setIdentifier(e.target.value);
-                          setMeterVerified(false);
-                        }}
+                        onChange={(e) => setIdentifier(e.target.value)}
                         inputMode={detail.serviceType === "cable" ? "text" : "numeric"}
                         placeholder={
                           detail.serviceType === "data"
@@ -777,20 +857,37 @@ export default function VtuBills({
                       </div>
                     </div>
 
-                    {meterVerified && (
-                      <div className="flex items-center gap-2 rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-xs text-emerald-400">
-                        <CheckCircle2 className="h-4 w-4 shrink-0" />
-                        <span>Meter verified and ready for payment.</span>
-                      </div>
+                    {checkingRecipient ? (
+                      <p className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+                        <Loader2 className="h-3 w-3 animate-spin" />
+                        Checking that number with the provider…
+                      </p>
+                    ) : recipientCheck?.checked && recipientCheck.valid ? (
+                      <p className="flex items-center gap-1.5 rounded-xl border border-vtu-accent/40 bg-vtu-accent/20 px-3 py-2 text-[11px] font-semibold text-vtu-accent-ink">
+                        <ShieldCheck className="h-3.5 w-3.5 shrink-0" />
+                        <span className="min-w-0 truncate">
+                          {recipientCheck.customerName
+                            ? `Account: ${recipientCheck.customerName}`
+                            : "The provider recognised this number."}
+                        </span>
+                      </p>
+                    ) : recipientRejected ? (
+                      <p className="flex items-start gap-1.5 rounded-xl border border-destructive/30 bg-destructive/10 px-3 py-2 text-[11px] font-semibold text-destructive">
+                        <TriangleAlert className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                        <span className="min-w-0">
+                          {recipientCheck?.message ??
+                            `The provider does not recognise that ${detail.customerIdentifierLabel.toLowerCase()}. Check it and try again — nothing has been charged.`}
+                        </span>
+                      </p>
+                    ) : (
+                      <p className="text-[11px] text-muted-foreground">
+                        {detail.serviceType === "data"
+                          ? "Verify recipient phone number before submitting."
+                          : detail.serviceType === "electricity"
+                            ? "Check the meter number carefully — it cannot be changed after payment. The token appears on your receipt."
+                            : `Delivery is sent to this ${detail.customerIdentifierLabel.toLowerCase()}.`}
+                      </p>
                     )}
-
-                    <p className="text-[11px] text-muted-foreground">
-                      {detail.serviceType === "data"
-                        ? "Verify recipient phone number before submitting."
-                        : detail.serviceType === "electricity"
-                          ? "Tokens are delivered immediately upon confirmation."
-                          : `Delivery is sent to this ${detail.customerIdentifierLabel.toLowerCase()}.`}
-                    </p>
                   </div>
 
                   {/* AMOUNT INPUT FOR METERED BILLS */}
@@ -834,9 +931,23 @@ export default function VtuBills({
                   {/* SUMMARY BREAKDOWN CARD */}
                   <div className="rounded-2xl border border-border bg-surface-2/60 p-4">
                     <div className="flex items-center justify-between text-xs text-muted-foreground">
-                      <span>Service fee</span>
-                      <span className="font-semibold text-emerald-400">₦0.00 (Free)</span>
+                      <span>You receive</span>
+                      <span className="font-semibold text-foreground tabular-nums">
+                        {serviceValueNgn === null
+                          ? detail.requiresAmount
+                            ? "As entered"
+                            : "—"
+                          : formatNgn(serviceValueNgn)}
+                      </span>
                     </div>
+                    {feeNgn > 0 && (
+                      <div className="mt-2 flex items-center justify-between text-xs text-muted-foreground">
+                        <span>Service fee</span>
+                        <span className="font-semibold text-foreground tabular-nums">
+                          {formatNgn(feeNgn)}
+                        </span>
+                      </div>
+                    )}
                     <div className="mt-2.5 flex items-center justify-between border-t border-border/80 pt-2.5">
                       <span className="flex items-center gap-1.5 text-xs font-semibold text-foreground">
                         <Coins className="h-4 w-4 text-primary" />
@@ -867,7 +978,11 @@ export default function VtuBills({
                       !detail.providerAvailable ||
                       !serviceCode ||
                       !affordable ||
-                      !identifier.trim()
+                      !identifier.trim() ||
+                      // A destination the provider positively rejected cannot be
+                      // paid for — the money would go to an account that does
+                      // not exist. A FAILED LOOKUP does not disable this.
+                      recipientRejected
                     }
                     className="min-h-12 w-full rounded-2xl text-sm font-bold shadow-md active:scale-98"
                   >

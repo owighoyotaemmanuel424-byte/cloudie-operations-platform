@@ -55,10 +55,10 @@ async function walk(dir, out = []) {
     return out;
   }
   for (const entry of entries) {
-    if (entry.name === "node_modules" || entry.name === "_generated" || entry.name === "convex") continue;
+    if (entry.name === "node_modules" || entry.name === "_generated" || entry.name === "convex" || entry.name === "__tests__") continue;
     const abs = join(dir, entry.name);
     if (entry.isDirectory()) await walk(abs, out);
-    else if (/\.tsx?$/.test(entry.name)) out.push(abs);
+    else if (/\.tsx?$/.test(entry.name) && !/\.(?:test|spec)\.tsx?$/.test(entry.name)) out.push(abs);
   }
   return out;
 }

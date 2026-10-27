@@ -11,6 +11,12 @@ services:
         value: production
       - key: DATABASE_URL
         sync: false
+      # Direct (non-pooled) Neon string. Migrations need a single session for
+      # their advisory lock and per-migration transaction.
+      - key: DIRECT_DATABASE_URL
+        sync: false
+      - key: CLOUDIE_AUTO_MIGRATE
+        value: "true"
       - key: JWT_SECRET
         generateValue: true
       - key: CORS_ORIGINS

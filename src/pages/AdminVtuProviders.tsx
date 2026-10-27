@@ -228,6 +228,7 @@ export default function AdminVtuProviders() {
   const setStatus = useMutation(api.vtuProviderAdmin.setProviderStatus);
   const deleteProvider = useMutation(api.vtuProviderAdmin.deleteProvider);
   const migrate = useMutation(api.vtuProviderAdmin.migratePairgateFromEnv);
+  const migrateAidaPay = useMutation(api.vtuProviderAdmin.migrateAidaPayFromEnv);
   const applyPreset = useMutation(api.vtuProviderAdmin.applyPreset);
   const aidapaySetup = useQuery(api.vtuProviderAdmin.getPresetSetup, {
     preset: AIDAPAY_PRESET.name,
@@ -301,6 +302,7 @@ export default function AdminVtuProviders() {
   const [draft, setDraft] = useState<Draft>(EMPTY_DRAFT);
   const [saving, setSaving] = useState(false);
   const [migrating, setMigrating] = useState(false);
+  const [seeding, setSeeding] = useState(false);
   // Transient per-row test result. Holds NO credential, only ok/latency/error.
   const [testing, setTesting] = useState<Record<string, "busy">>({});
   const [testResults, setTestResults] = useState<Record<string, TestResult>>({});
@@ -489,6 +491,40 @@ export default function AdminVtuProviders() {
       toast.error(error instanceof Error ? error.message : "Migration failed");
     } finally {
       setMigrating(false);
+    }
+  }
+
+  /**
+   * Seed AidaPay's credentials from the environment.
+   *
+   * The alternative to the form above, for a deployment that keeps provider
+   * secrets in the project's environment rather than in the database. It is
+   * safe to press twice: the mutation fills what is missing and never
+   * overwrites a credential that is already sealed, so this cannot rotate a
+   * live key and cannot revert one an operator pasted by hand.
+   */
+  async function runAidaPaySeed() {
+    setSeeding(true);
+    try {
+      const result = await migrateAidaPay({});
+      if (result.action === "no_env") {
+        toast.error(
+          "AIDAPAY_API_KEY is not set in this project, so there is nothing to seed. Paste the key into the form above instead.",
+        );
+      } else if (result.action === "inserted") {
+        toast.success(
+          result.hasAccountPin
+            ? "AidaPay seeded from environment in sandbox"
+            : "AidaPay seeded, but AIDAPAY_ACCOUNT_PIN is not set — purchases will be refused until a PIN is configured",
+        );
+        await probeConnection(AIDAPAY_PRESET.name, { quiet: true });
+      } else {
+        toast.info("AidaPay constants repaired — stored credentials kept");
+      }
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Seeding failed");
+    } finally {
+      setSeeding(false);
     }
   }
 
@@ -696,6 +732,39 @@ export default function AdminVtuProviders() {
                 <RefreshCw className="h-4 w-4" />
               )}
               Run migration
+            </Button>
+          </CardContent>
+        </Card>
+      </Reveal>
+
+      <Reveal delay={0.02}>
+        <Card className="border-dashed">
+          <CardContent className="flex flex-wrap items-center justify-between gap-4 p-5">
+            <div className="min-w-0 space-y-1">
+              <p className="text-sm font-medium">Seed AidaPay from environment</p>
+              <p className="text-sm text-muted-foreground">
+                Reads <code className="text-xs">AIDAPAY_API_KEY</code>,{" "}
+                <code className="text-xs">AIDAPAY_ACCOUNT_PIN</code> and{" "}
+                <code className="text-xs">AIDAPAY_WEBHOOK_SECRET</code>, seals
+                them onto the provider row, and asserts every endpoint and auth
+                constant from the preset. The webhook secret defaults to the API
+                key, which is what AidaPay signs callbacks with. Re-running fills
+                only what is missing — a stored credential is never overwritten —
+                and a new row is created in sandbox until you promote it.
+              </p>
+            </div>
+            <Button
+              variant="outline"
+              onClick={runAidaPaySeed}
+              disabled={seeding}
+              className="min-h-11 shrink-0 gap-2"
+            >
+              {seeding ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <RefreshCw className="h-4 w-4" />
+              )}
+              Seed from env
             </Button>
           </CardContent>
         </Card>

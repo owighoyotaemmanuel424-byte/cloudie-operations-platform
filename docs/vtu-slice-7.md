@@ -146,9 +146,11 @@ pins the new grammar's two shapes.
    `GET /packages/...` sync that creates products and routes for you is the
    obvious next slice — it is the difference between "the operator can add a
    plan" and "the operator clicks one button".
-2. **No recipient-name check before charging.** AidaPay exposes
-   `GET /validation/{provider_code}/{recipient}`, which returns the customer
-   name for a meter or smartcard. Showing that before the customer confirms is
-   the standard way to stop a typo becoming a delivered top-up for a stranger.
+2. ~~**No recipient-name check before charging.**~~ **CLOSED** in
+   `docs/vtu-slice-8.md` §2. AidaPay's
+   `GET /validation/{provider_code}/{recipient}` is now called from the bills
+   page before confirmation, and a destination the provider positively rejects
+   cannot be paid for. The important half of that design: "we could not ask"
+   does **not** block a purchase.
 3. **Receipts do not carry the token yet.** It is on the purchase page and in
    history; the receipt document is a separate template change.

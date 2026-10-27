@@ -234,6 +234,49 @@ export type ProviderPurchaseResult =
       raw: unknown;
     };
 
+/**
+ * What an adapter needs to ask "whose account is this?" before a purchase.
+ *
+ * A typo in a meter or smartcard number is the single most expensive mistake a
+ * customer can make here: the top-up is delivered, to a stranger, and there is
+ * nothing to refund because the provider did exactly what was asked. Every
+ * aggregator that exposes a lookup endpoint solves it by returning the
+ * account holder's name for the destination BEFORE money moves, which is what
+ * this request carries the inputs for.
+ */
+export interface ProviderRecipientRequest {
+  serviceType: VtuServiceType;
+  /** The canonical product the customer chose, for adapters that need to
+   *  distinguish a biller from a network. */
+  productCode: string;
+  /**
+   * The PROVIDER's own code for the biller — the value AidaPay calls
+   * `provider_code`. Not `productCode`: the lookup endpoint is keyed by the
+   * aggregator's namespace, and a canonical product code is ours.
+   */
+  providerProductCode: string;
+  /** Already validated and normalised by `validateCustomerIdentifier`. */
+  customerIdentifier: string;
+}
+
+/**
+ * A recipient lookup's answer.
+ *
+ * `valid: false` is a real verdict from the provider — "no such meter". It is
+ * deliberately NOT the same as the adapter returning `null`, which means "I
+ * could not ask" (unknown endpoint, unreadable body, transport failure).
+ * Collapsing the two would block a purchase because the provider was briefly
+ * unreachable, which is the opposite of the point.
+ */
+export interface ProviderRecipientCheck {
+  /** True when the provider recognised the destination. */
+  valid: boolean;
+  /** The account holder's name, when the provider returns one. */
+  customerName?: string;
+  /** Provider message, safe to show a customer. Never credential-derived. */
+  message?: string;
+}
+
 export interface ProviderCallbackEvent {
   providerReference: string;
   outcome: "confirmed" | "failed";
@@ -286,6 +329,23 @@ export interface VtuProviderAdapter {
     headers: Record<string, string>,
     secret: string,
   ): ProviderCallbackEvent | null;
+
+  /**
+   * Optional account-holder lookup, for aggregators that expose one.
+   *
+   * OMITTED BY DESIGN on the interface rather than required: adding a required
+   * method breaks every existing adapter and the registry's completeness check
+   * with it, and an aggregator with no lookup endpoint is a legitimate
+   * provider rather than a broken one. A caller must therefore treat an absent
+   * method as "this provider cannot answer", never as a failure.
+   *
+   * Returns `null` when the provider could not be asked. A non-null result
+   * always carries a real verdict.
+   */
+  verifyRecipient?(
+    req: ProviderRecipientRequest,
+    opts: ProviderCallOptions,
+  ): Promise<ProviderRecipientCheck | null>;
 
   /**
    * Authoritative re-read of one transaction. UNUSED in slice 1.

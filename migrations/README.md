@@ -17,4 +17,4 @@ This folder starts an additive PostgreSQL foundation for users, tenant sites, wa
 4. Complete auth/roles, tenant membership, banking accounts and double-entry ledger, deposits/withdrawals/transfers, and remaining service domains.
 5. Prove import counts, financial reconciliation, and feature parity before any production cutover.
 
-All migrations 001–007 have been applied to the connected Neon database (`neondb`) and recorded in `schema_migrations` with SHA-256 checksums; see `STATUS.md` for the applied-state evidence and verification commands.
+**Unverified historical claim:** a prior version stated that migrations 001–007 had been applied and recorded in `schema_migrations`. A current read-only inventory of production branch `br-winter-snow-b5spd77h` and test branch `br-nameless-morning-b5o1qitn` returned zero application tables; no migration file has yet been executed against the test branch in the current diagnostic workflow. Do not treat any migration as applied. See `STATUS.md` and run `scripts/neon-diagnose.sh` on the disposable test branch before updating migration state.

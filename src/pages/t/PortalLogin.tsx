@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Link, Navigate, useNavigate } from "react-router";
+import { Navigate, useNavigate } from "react-router";
 import { useAuthActions } from "@convex-dev/auth/react";
 import { useMutation } from "convex/react";
 import { api } from "@/convex/_generated/api";
@@ -221,9 +221,16 @@ function LoginBody() {
                 >
                   {createMode ? "I already have an account" : "Create an account"}
                 </button>
-                <Link to={`/auth?returnTo=${encodeURIComponent(dashboard)}`} className="underline">
-                  Forgot password?
-                </Link>
+                {tenant.supportEmail ? (
+                  <a
+                    href={`mailto:${tenant.supportEmail}?subject=${encodeURIComponent("Password reset request")}`}
+                    className="underline"
+                  >
+                    Forgot password?
+                  </a>
+                ) : (
+                  <span>Contact the site owner for password help</span>
+                )}
               </div>
             </form>
           )}

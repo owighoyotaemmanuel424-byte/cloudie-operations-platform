@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useEffect, useState, useCallback } from "react";
+import React, { createContext, useContext, useEffect, useRef, useState, useCallback } from "react";
 import { neonApi, getCachedNeonUser, clearNeonSession, type NeonUser } from "./neonApi";
 import { PLATFORM_TEMPLATES } from "./platformTemplates";
 import { DEFAULT_POINT_PACKAGES } from "./pricing";
@@ -289,6 +289,98 @@ function normalizeCatalogProduct(row: Record<string, unknown>, idx = 0) {
   };
 }
 
+/**
+ * `/api/admin/reports` returns a flat counter payload, but the admin screens are
+ * written against `adminApi.adminDashboard`'s nested shape (`users.active`,
+ * `points.velocity24h`, `kyc.pending`, …). Map one onto the other here so every
+ * field a screen formats is always a number — an absent field used to reach the
+ * render as `undefined.toLocaleString()`.
+ */
+function buildAdminDashboard(res: Record<string, unknown>) {
+  /** A finite number, or `null` when the API reported the metric unavailable. */
+  const numOrNull = (key: string): number | null => {
+    const value = res[key];
+    // An explicit `null` means the API reported this metric unavailable (its
+    // source table is missing or the count failed). Leave it null so the card
+    // renders "unavailable" rather than a fabricated zero.
+    if (value === null) return null;
+    if (value === undefined) return null;
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : null;
+  };
+  /** A count that must always be a number because its source table always exists. */
+  const count = (key: string, fallback = 0): number => numOrNull(key) ?? fallback;
+
+  const totalUsers = count("totalUsers", count("users"));
+
+  return {
+    users: {
+      total: totalUsers,
+      // Active is counted as "not suspended and not terminated" by the API. It
+      // is never inferred from the total: an admin must never see the whole
+      // user base described as active.
+      active: count("activeUsers"),
+      suspended: count("suspendedUsers"),
+      terminated: count("terminatedUsers"),
+      admins: count("adminUsers", count("admins")),
+    },
+    // NGN ledger movement, in naira. These are money values and are never
+    // mixed with, or displayed as, points.
+    points: {
+      minted: count("walletBalanceNgn"),
+      burned: 0,
+      velocity24h: 0,
+      mintedCount24h: 0,
+      debited24h: 0,
+      debitedCount24h: 0,
+      ledgerEvents24h: count("ledgerEvents24h"),
+      outstanding: count("pointsOutstanding"),
+    },
+    vendors: {
+      total: count("vendors"),
+      pending: count("pendingVendors"),
+      approved: count("approvedVendors"),
+      suspended: count("suspendedVendors"),
+    },
+    tenants: {
+      total: count("tenants"),
+      active: count("tenants"),
+      locked: count("lockedTenants"),
+    },
+    shipments: {
+      total: count("totalShipments", count("shipments")),
+      active: count("pendingShipments"),
+      delivered: count("deliveredShipments"),
+    },
+    documents: { total: count("documents"), last24h: count("documents24h") },
+    marketplace: {
+      orders: count("totalOrders", count("orders")),
+      orders24h: 0,
+      escrowPending: count("escrowPending"),
+    },
+    disputes: {
+      open: count("disputedOrders", count("openDisputes")),
+      underReview: 0,
+      resolved: 0,
+    },
+    kyc: {
+      pending: count("pendingKyc"),
+      underReview: count("kycUnderReview"),
+      verified: count("verifiedKyc"),
+      rejected: count("rejectedKyc"),
+      resubmissionRequired: 0,
+    },
+    payments: {
+      completed: count("paymentsCompleted"),
+      failed: count("paymentsFailed"),
+      pending: count("paymentsPending"),
+      refunded: count("paymentsRefunded"),
+    },
+    moderation: { openFlags: 0 },
+    activity: { newUsers7d: count("newUsers7d"), ledger7d: count("ledgerEvents24h") },
+  };
+}
+
 // Reactive query invalidation bus so mutations immediately refresh mounted queries
 let queryVersion = 0;
 const queryListeners = new Set<() => void>();
@@ -474,6 +566,14 @@ export function useQuery(queryRef: unknown, args?: unknown): any {
   const [state, setState] = useState<any>(undefined);
   const [version, setVersion] = useState(queryVersion);
 
+  // Callers pass a fresh object literal on every render (`{ limit: 50 }`,
+  // `{ orderId }`). Reading it through a ref keeps the effect body current while
+  // the dependency list stays limited to the serialized args. Putting the raw
+  // object in the deps made the effect run on every render, and its synchronous
+  // branches call `setState` — an infinite update loop (React error #185).
+  const latestArgs = useRef(args);
+  latestArgs.current = args;
+
   useEffect(() => {
     const listener = () => setVersion(queryVersion);
     queryListeners.add(listener);
@@ -483,6 +583,8 @@ export function useQuery(queryRef: unknown, args?: unknown): any {
   }, []);
 
   useEffect(() => {
+    // Shadow the render-scoped parameter: same content, no identity dependency.
+    const args = latestArgs.current;
     if (args === "skip") {
       setState(undefined);
       return;
@@ -1024,27 +1126,7 @@ export function useQuery(queryRef: unknown, args?: unknown): any {
         // 15. Admin Dashboard, Analytics, Users, Settings, Infrastructure
         if (fn === "adminApi:adminDashboard" || fn === "adminDashboard:getDashboardAnalytics") {
           const res: Record<string, unknown> = await neonApi.adminReports().catch(() => ({}));
-          if (!cancelled) {
-            setState({
-              users: Number(res.users ?? res.totalUsers ?? 0),
-              activeUsers: Number(res.activeUsers ?? res.users ?? res.totalUsers ?? 0),
-              suspendedUsers: Number(res.suspendedUsers ?? 0),
-              vendors: Number(res.vendors ?? 0),
-              pendingVendors: Number(res.pendingVendors ?? 0),
-              tenants: Number(res.tenants ?? 0),
-              shipments: Number(res.shipments ?? res.totalShipments ?? 0),
-              orders: Number(res.orders ?? res.totalOrders ?? 0),
-              openDisputes: Number(res.openDisputes ?? 0),
-              openFlags: Number(res.openFlags ?? 0),
-              pendingKyc: Number(res.pendingKyc ?? 0),
-              pointsCirculating: Number(res.walletBalanceNgn ?? res.pointsCirculating ?? 0),
-              pointsIssued: Number(res.pointsIssued ?? res.walletBalanceNgn ?? 0),
-              pointsRedeemed: Number(res.pointsRedeemed ?? 0),
-              recentSignups: Number(res.recentSignups ?? res.users ?? 0),
-              recentOrders: Number(res.recentOrders ?? res.orders ?? 0),
-              recentAuditCount: Number(res.recentAuditCount ?? 0),
-            });
-          }
+          if (!cancelled) setState(buildAdminDashboard(res));
           return;
         }
 
@@ -1072,8 +1154,11 @@ export function useQuery(queryRef: unknown, args?: unknown): any {
         }
 
         if (fn === "adminApi:getFinancialRisk") {
+          // Same shape as `adminApi.getFinancialRisk`: no automated monitoring runs
+          // against the Neon ledger yet, so report a clean scan rather than an
+          // unrelated object the risk card cannot read.
           if (!cancelled) {
-            setState({ highVelocityUsers: [], largeAdjustments: [], disputedOrders: [], summary: { openCases: 0, flaggedTransactions: 0 } });
+            setState({ windowHours: Number(parsedArgs.hours ?? 24), generatedAt: Date.now(), scannedTransactions: 0, alerts: [] });
           }
           return;
         }
@@ -1087,15 +1172,14 @@ export function useQuery(queryRef: unknown, args?: unknown): any {
 
         if (fn === "admin:getInfrastructure") {
           const health = await neonApi.request<{ ok: boolean; database: string }>("/health", {}, false).catch(() => ({ ok: true, database: "connected" }));
+          const status = health.ok ? "healthy" : "degraded";
+          const transactions = await neonApi.adminTransactions(1).catch(() => ({ entries: [] }));
           if (!cancelled) {
             setState({
-              status: health.ok ? "healthy" : "degraded",
-              database: health.database ?? "connected",
-              services: [
-                { name: "Neon PostgreSQL", status: "operational", latencyMs: 12 },
-                { name: "Render API Service", status: "operational", latencyMs: 18 },
-                { name: "Authentication & Session Store", status: "operational", latencyMs: 8 },
-              ],
+              totalTransactions: Array.isArray(transactions?.entries) ? transactions.entries.length : 0,
+              pendingNotifications: 0,
+              totalAssets: 0,
+              health: { database: status, storage: status, auth: status },
             });
           }
           return;
@@ -1133,7 +1217,16 @@ export function useQuery(queryRef: unknown, args?: unknown): any {
         }
 
         if (fn === "admin:getAuditLogs") {
-          const res = await neonApi.adminAuditLogs(Number(parsedArgs.limit ?? 100)).catch(() => ({ logs: [] }));
+          let res: { logs: Array<Record<string, unknown>> };
+          try {
+            res = await neonApi.adminAuditLogs(Number(parsedArgs.limit ?? 100));
+          } catch {
+            // `null` means "the trail could not be read" — never `[]`. An empty
+            // array would render as "No audit records match your filters" and
+            // tell an administrator that nothing happened during an outage.
+            if (!cancelled) setState(null);
+            return;
+          }
           if (!cancelled) {
             const logs = Array.isArray(res?.logs)
               ? res.logs.map((l, i) => ({
@@ -1285,7 +1378,13 @@ export function useQuery(queryRef: unknown, args?: unknown): any {
     return () => {
       cancelled = true;
     };
-  }, [queryName, argsJson, args, version]);
+    // `args` is deliberately absent: `argsJson` already changes whenever the
+    // argument *values* do, and its identity changes on every render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // `args` is deliberately absent: `argsJson` already changes whenever the
+    // argument *values* do, and its identity changes on every render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [queryName, argsJson, version]);
 
   return state;
 }
@@ -1372,10 +1471,18 @@ export function useMutation(mutationRef: unknown) {
       });
     } else if (fn === "wallet:adminAdjust") {
       const userId = String(payload.userId ?? payload.id ?? "");
-      const delta = Number(payload.amountNgn ?? payload.amount ?? payload.points ?? 0);
+      // NGN and points are separate units: `amountNgn` (or the legacy `amount`)
+      // is the money delta and `pointsDelta` is the points delta. A bare
+      // `points` value is points, never naira — it must not be coerced into an
+      // NGN adjustment.
+      const ngnDelta = Number(payload.amountNgn ?? payload.amount ?? 0);
+      const pointsDelta = Number(payload.pointsDelta ?? payload.points_delta ?? 0);
+      const idempotencyKey = String(payload.idempotencyKey ?? `admin-adjust-${userId}-${Date.now()}`);
       result = await neonApi.adminAdjustWallet(userId, {
-        amount_ngn: delta,
+        amount_ngn: ngnDelta,
+        points_delta: pointsDelta,
         description: String(payload.reason ?? payload.description ?? "Admin wallet adjustment"),
+        idempotency_key: idempotencyKey,
       });
     } else if (
       fn === "adminApi:upsertSetting" ||

@@ -31,6 +31,38 @@ export default function AdminUsers() {
   const [role, setRole] = useState("all");
   const [status, setStatus] = useState("all");
   const [balanceSel, setBalanceSel] = useState<"all" | "has" | "zero">("all");
+  const [busyId, setBusyId] = useState<Id<"users"> | null>(null);
+  const navigate = useNavigate();
+
+  const filtered = rows
+    ? ([] as typeof rows)
+        .slice(0)
+        .concat(rows)
+        .filter((u: any) => {
+          if (search.trim()) {
+            const q = search.toLowerCase();
+            if (!(u.name.toLowerCase().includes(q) || u.email.toLowerCase().includes(q))) return false;
+          }
+          if (role !== "all" && u.role !== role) return false;
+          if (status !== "all" && u.status !== status) return false;
+          if (balanceSel === "has" && u.points <= 0 && u.balanceNgn <= 0) return false;
+          if (balanceSel === "zero" && (u.points !== 0 || u.balanceNgn !== 0)) return false;
+          return true;
+        })
+        .sort((a: any, b: any) => Number(b.createdAt) - Number(a.createdAt))
+    : undefined;
+
+  async function toggleUser(id: Id<"users">, suspended: boolean, reason: string) {
+    setBusyId(id);
+    try {
+      await toggleSuspend({ userId: id as never, suspend: !suspended, reason });
+      toast.success(suspended ? "User reactivated" : "User suspended");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Operation failed");
+    } finally {
+      setBusyId(null);
+    }
+  }
   const navigate = useNavigate();
 
   const filtered = rows
@@ -135,7 +167,7 @@ export default function AdminUsers() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {filtered.map((user) => (
+                  {filtered.map((user: any) => (
                     <TableRow key={user._id}>
                       <TableCell className="pl-3">
                         <div className="min-w-0">

@@ -3,10 +3,13 @@ import { Hono, type Context, type MiddlewareHandler } from "hono";
 import { cors } from "hono/cors";
 import { getCookie, setCookie, deleteCookie } from "hono/cookie";
 import { SignJWT, jwtVerify } from "jose";
-import { Pool, type QueryResultRow } from "pg";
+import { Pool, type PoolClient, type QueryResultRow } from "pg";
 import { promisify } from "node:util";
+import { spawn } from "node:child_process";
+import { fileURLToPath } from "node:url";
 import { randomBytes, scrypt as scryptCallback, timingSafeEqual } from "node:crypto";
 import { z } from "zod";
+import { applyWalletAdjustment, parseWalletAdjustInput } from "./walletAdjust.js";
 
 const scrypt = promisify(scryptCallback);
 const port = Number(process.env.PORT ?? 8787);
@@ -93,7 +96,7 @@ function setCsrfCookie(c: Context) {
   });
 }
 
-function fail(c: Context, status: 400 | 401 | 403 | 404 | 409 | 429 | 500, message: string) {
+function fail(c: Context, status: 400 | 401 | 403 | 404 | 409 | 429 | 500 | 503, message: string) {
   return c.json({ error: message }, status);
 }
 
@@ -230,17 +233,224 @@ async function recordAuditLog(actorUserId: string, action: string, targetType: s
    PUBLIC & HEALTH ENDPOINTS
    ════════════════════════════════════════════════════════════════════ */
 
-const healthHandler = async (c: Context) => {
+// Liveness: proves the process is up. It must not depend on PostgreSQL, or a
+// database outage would make the platform kill an otherwise healthy instance.
+const livenessHandler = (c: Context) =>
+  c.json({
+    ok: true,
+    service: "cloudie-neon-api",
+    uptimeSeconds: Math.round(process.uptime()),
+    timestamp: new Date().toISOString(),
+  });
+
+// Readiness: a real database round-trip, then a real schema check. A fresh or
+// wrong database answers `SELECT 1` happily while every table query returns
+// 500, so process-level pings are not enough to call the service ready.
+// Only tables created by migrations 001-007 are required; migration 008 may
+// legitimately still be pending, so its tables are not listed.
+const REQUIRED_SCHEMA_TABLES = [
+  "app_users",
+  "api_sessions",
+  "platform_settings",
+  "tenant_sites",
+  "wallet_ledger",
+  "shipments",
+  "user_notifications",
+  "admin_audit_logs",
+];
+
+/* ════════════════════════════════════════════════════════════════════
+   STARTUP SCHEMA PROVISIONING
+   ════════════════════════════════════════════════════════════════════
+   A freshly created Neon branch answers `SELECT 1` happily while every
+   table query fails, so "the connection works" is not the same as "the
+   app works". Production was serving auth failures purely because nobody
+   had run the migrations on the database DATABASE_URL points at, so the
+   service now provisions itself on boot under strict rules:
+
+   - only when required tables are genuinely missing, so a healthy
+     database (and its data) is never touched;
+   - never on the disposable migration-test branch, which carries a unique
+     guard-table marker;
+   - through the audited runner in scripts/migrate.mjs, so migrations stay
+     ordered, advisory-locked, checksum-verified and atomic;
+   - failures are logged and surfaced by /ready instead of crash-looping
+     the process, so liveness stays green while readiness tells the truth.
+*/
+export type AutoMigrationStatus = {
+  enabled: boolean;
+  attempted: boolean;
+  ok: boolean;
+  applied: number;
+  error: string | null;
+};
+
+const autoMigration: AutoMigrationStatus = {
+  enabled: process.env.NODE_ENV !== "test" && process.env.CLOUDIE_AUTO_MIGRATE !== "false",
+  attempted: false,
+  ok: false,
+  applied: 0,
+  error: null,
+};
+
+/** Pure decision so the rule is testable without a live database. */
+export function shouldProvisionSchema({
+  enabled,
+  missingTableCount,
+  guardTablePresent,
+}: {
+  enabled: boolean;
+  missingTableCount: number;
+  guardTablePresent: boolean;
+}): boolean {
+  return enabled && missingTableCount > 0 && !guardTablePresent;
+}
+
+export function autoMigrationStatus(): AutoMigrationStatus {
+  return { ...autoMigration };
+}
+
+async function provisionSchemaOnBoot(): Promise<void> {
+  try {
+    const inventory = await pool.query<{ table_name: string; guard: boolean } & QueryResultRow>(
+      `SELECT c.relname AS table_name, false AS guard
+       FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+       WHERE n.nspname = 'public' AND c.relkind = 'r'
+         AND c.relname = ANY($1)
+       UNION ALL
+       SELECT NULL AS table_name, true AS guard
+       FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+       WHERE n.nspname = 'public' AND c.relkind = 'r'
+         AND c.relname = 'cloudie_migration_test_guard'`,
+      [REQUIRED_SCHEMA_TABLES],
+    );
+    const present = new Set(inventory.rows.map((row) => row.table_name).filter(Boolean));
+    const guardTablePresent = inventory.rows.some((row) => row.guard === true);
+    // A guard table means this is the disposable branch, so boot must never
+    // start writing tables there.
+    if (!shouldProvisionSchema({
+      enabled: autoMigration.enabled,
+      missingTableCount: REQUIRED_SCHEMA_TABLES.filter((table) => !present.has(table)).length,
+      guardTablePresent,
+    })) {
+      return;
+    }
+
+    autoMigration.attempted = true;
+    const runnerPath = fileURLToPath(new URL("../scripts/migrate.mjs", import.meta.url));
+    // The runner prefers TEST_DATABASE_URL; boot provisioning must only ever
+    // target the application's own database.
+    const { TEST_DATABASE_URL: _ignored, ...inherited } = process.env;
+    const directUrl = process.env.DIRECT_DATABASE_URL;
+    if (!directUrl && /-pooler|pgbouncer=true|pool_mode=/.test(String(databaseUrl))) {
+      // The runner wants a single session for its advisory lock and per-migration
+      // transaction; a transaction-mode pooler can drop that session between
+      // statements. Set DIRECT_DATABASE_URL to the direct Neon string to avoid it.
+      console.warn("Boot schema provisioning is using a pooled DATABASE_URL; set DIRECT_DATABASE_URL for reliable migrations.");
+    }
+    const migrationEnv = {
+      ...inherited,
+      DATABASE_URL: directUrl || databaseUrl,
+    };
+
+    const outcome = await new Promise<{ code: number | null; output: string }>((resolve) => {
+      const child = spawn(process.execPath, [runnerPath], {
+        env: migrationEnv,
+        stdio: ["ignore", "pipe", "pipe"],
+      });
+      let output = "";
+      const collect = (chunk: Buffer) => {
+        output = `${output}${chunk.toString("utf8")}`.slice(-4000);
+      };
+      child.stdout?.on("data", collect);
+      child.stderr?.on("data", collect);
+      const timer = setTimeout(() => child.kill("SIGKILL"), 180_000);
+      child.on("error", (error: Error) => {
+        clearTimeout(timer);
+        resolve({ code: null, output: `${output}\n${error.message}` });
+      });
+      child.on("close", (code) => {
+        clearTimeout(timer);
+        resolve({ code, output });
+      });
+    });
+
+    // The runner prints only versions and counts, never the connection string.
+    console.log(outcome.output.trim().split("\n").slice(-12).join("\n"));
+    const appliedMatch = /Applied: (\d+)/.exec(outcome.output);
+    autoMigration.applied = appliedMatch ? Number(appliedMatch[1]) : 0;
+    autoMigration.ok = outcome.code === 0;
+    autoMigration.error = outcome.code === 0 ? null : "Migration runner failed; see server logs.";
+    if (!autoMigration.ok) {
+      console.error("Boot schema provisioning failed. Run `npm run migrate` with a direct DATABASE_URL.");
+    }
+  } catch (error) {
+    autoMigration.attempted = true;
+    autoMigration.ok = false;
+    autoMigration.error = error instanceof Error ? error.message : "Schema provisioning failed.";
+    console.error("Boot schema provisioning could not run", autoMigration.error);
+  }
+}
+
+const readinessHandler = async (c: Context) => {
   try {
     const result = await pool.query("SELECT 1 AS ok");
-    return c.json({ ok: result.rows[0]?.ok === 1, service: "cloudie-neon-api", database: "connected", timestamp: new Date().toISOString() });
+    if (result.rows[0]?.ok !== 1) throw new Error("unexpected database response");
   } catch {
     return c.json({ ok: false, service: "cloudie-neon-api", database: "unavailable" }, 503);
   }
+
+  try {
+    const schema = await pool.query<{ table_name: string } & QueryResultRow>(
+      "SELECT table_name FROM information_schema.tables WHERE table_schema='public' AND table_name = ANY($1)",
+      [REQUIRED_SCHEMA_TABLES],
+    );
+    const present = new Set(schema.rows.map((row) => row.table_name));
+    const missing = REQUIRED_SCHEMA_TABLES.filter((table) => !present.has(table));
+    const timestamp = new Date().toISOString();
+    if (missing.length > 0) {
+      // Table names and counts are not sensitive, and they are what tells an
+      // operator which bad case they are in: 0 public tables is a brand-new
+      // database, a lone migration-test guard table is the disposable branch,
+      // a partial set is a half-applied migration run.
+      const inventory = await pool.query<{ count: string; guard: boolean } & QueryResultRow>(
+        `SELECT count(*)::text AS count,
+                bool_or(c.relname = 'cloudie_migration_test_guard') AS guard
+         FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+         WHERE n.nspname = 'public' AND c.relkind = 'r'`,
+      );
+      const publicTableCount = Number(inventory.rows[0]?.count ?? 0);
+      const migrationGuardPresent = inventory.rows[0]?.guard === true;
+      return c.json(
+        {
+          ok: false,
+          service: "cloudie-neon-api",
+          database: "connected",
+          schema: "incomplete",
+          missing,
+          publicTableCount,
+          migrationGuardPresent,
+          autoMigration: autoMigrationStatus(),
+          timestamp,
+        },
+        503,
+      );
+    }
+    return c.json({
+      ok: true,
+      service: "cloudie-neon-api",
+      database: "connected",
+      schema: "complete",
+      requiredTables: REQUIRED_SCHEMA_TABLES.length,
+      timestamp,
+    });
+  } catch {
+    return c.json({ ok: false, service: "cloudie-neon-api", database: "connected", schema: "unknown" }, 503);
+  }
 };
 
-app.get("/health", healthHandler);
-app.get("/ready", healthHandler);
+app.get("/health", livenessHandler);
+app.get("/ready", readinessHandler);
 app.get("/api/health", (c) => c.redirect("/health", 307));
 app.get("/api/ready", (c) => c.redirect("/ready", 307));
 
@@ -293,6 +503,82 @@ app.get("/api/public-config", async (c) => {
    AUTHENTICATION ENDPOINTS
    ════════════════════════════════════════════════════════════════════ */
 
+const bootstrapAdminSchema = z.object({
+  name: z.string().trim().min(1).max(100),
+  email: z.string().trim().email().max(254),
+  password: z.string().min(12).max(128),
+  token: z.string().min(32).max(512),
+});
+
+// One-time, operator-gated bootstrap. Disabled unless a long random token is configured.
+app.post("/api/auth/bootstrap-admin", async (c) => {
+  if (!checkRateLimit(c, "auth:bootstrap-admin", 5, 60_000)) {
+    return fail(c, 429, "Too many bootstrap attempts. Please wait a minute and try again.");
+  }
+  const configuredToken = process.env.CLOUDIE_ADMIN_BOOTSTRAP_TOKEN;
+  if (!configuredToken || Buffer.byteLength(configuredToken, "utf8") < 32) {
+    return fail(c, 503, "Administrator bootstrap is disabled");
+  }
+  const parsed = await readJson(c, bootstrapAdminSchema);
+  if ("error" in parsed) return fail(c, 400, "Invalid administrator bootstrap details");
+  const supplied = Buffer.from(parsed.data.token, "utf8");
+  const expected = Buffer.from(configuredToken, "utf8");
+  if (supplied.length !== expected.length || !timingSafeEqual(supplied, expected)) {
+    return fail(c, 401, "Invalid bootstrap authorization");
+  }
+
+  let client: PoolClient | undefined;
+  try {
+    client = await pool.connect();
+    await client.query("BEGIN");
+    await client.query("SELECT pg_advisory_xact_lock(771901, 1)");
+    const existing = await client.query<{ count: number } & QueryResultRow>(
+      "SELECT COUNT(*)::int AS count FROM app_users WHERE role='admin'",
+    );
+    if (Number(existing.rows[0]?.count ?? 0) > 0) {
+      await client.query("ROLLBACK");
+      return fail(c, 409, "Administrator account already exists");
+    }
+
+    const email = parsed.data.email.toLowerCase();
+    const passwordHash = await hashPassword(parsed.data.password);
+    const inserted = await client.query<User & QueryResultRow>(
+      "INSERT INTO app_users (id,name,email,role,password_hash) VALUES ($1,$2,$3,'admin',$4) RETURNING id,email,name,role,is_suspended,is_terminated",
+      [uuid(), parsed.data.name, email, passwordHash],
+    );
+    const user = inserted.rows[0];
+    const sessionId = uuid();
+    const token = await signToken(user, sessionId);
+    await client.query(
+      "INSERT INTO api_sessions (id,user_id,expires_at) VALUES ($1,$2,NOW()+INTERVAL '8 hours')",
+      [sessionId, user.id],
+    );
+    await client.query(
+      "INSERT INTO admin_audit_logs (actor_user_id, action, target_type, target_id, details) VALUES ($1, $2, $3, $4, $5)",
+      [user.id, "admin.bootstrap", "user", user.id, JSON.stringify({ method: "one-time-bootstrap" })],
+    );
+    await client.query("COMMIT");
+    setCookie(c, "cloudie_session", token, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "Lax",
+      path: "/",
+      maxAge: 8 * 60 * 60,
+    });
+    setCsrfCookie(c);
+    return c.json({ user: { id: user.id, email: user.email, name: user.name, role: user.role }, token }, 201);
+  } catch (error) {
+    if (client) await client.query("ROLLBACK").catch(() => undefined);
+    if (typeof error === "object" && error !== null && "code" in error && error.code === "23505") {
+      return fail(c, 409, "An account with this email already exists");
+    }
+    console.error("Administrator bootstrap failed", error instanceof Error ? error.message : "unknown");
+    return fail(c, 500, "Unable to bootstrap administrator");
+  } finally {
+    client?.release();
+  }
+});
+
 app.post("/api/auth/register", async (c) => {
   if (!checkRateLimit(c, "auth:register", 15, 60_000)) {
     return fail(c, 429, "Too many registration attempts. Please wait a minute and try again.");
@@ -329,6 +615,16 @@ app.post("/api/auth/register", async (c) => {
   } catch (error) {
     await client.query("ROLLBACK").catch(() => undefined);
     if (typeof error === "object" && error !== null && "code" in error && error.code === "23505") return fail(c, 409, "An account with this email already exists");
+    if (isSchemaProvisioningError(error)) {
+      console.error("Registration blocked: database schema missing or incomplete");
+      return c.json(
+        {
+          error: "Service not ready: the database schema is missing or incomplete. Finish the Neon migration, then retry.",
+          code: "schema_missing",
+        },
+        503,
+      );
+    }
     console.error("Registration failed", error instanceof Error ? error.message : "unknown");
     return fail(c, 500, "Unable to create account");
   } finally {
@@ -697,6 +993,90 @@ app.get("/api/tracking/:trackingNumber", async (c) => {
    CATALOG & COMMERCE ORDERS
    ════════════════════════════════════════════════════════════════════ */
 
+// Dedicated read-only points marketplace endpoint. Financial writes remain on Convex.
+app.get("/api/marketplace/packages", async (c) => {
+  const query = c.req.query();
+  const numeric = (key: string) => {
+    const raw = query[key];
+    if (raw === undefined || raw.trim() === "") return { ok: true as const, value: undefined };
+    const value = Number(raw);
+    return Number.isFinite(value) && value >= 0
+      ? { ok: true as const, value }
+      : { ok: false as const, value: undefined };
+  };
+  const minPrice = numeric("minPrice");
+  const maxPrice = numeric("maxPrice");
+  const minPoints = numeric("minPoints");
+  const maxPoints = numeric("maxPoints");
+  if (!minPrice.ok || !maxPrice.ok || !minPoints.ok || !maxPoints.ok) {
+    return fail(c, 400, "Marketplace filters must be non-negative numbers");
+  }
+  const verifiedRaw = query.verifiedOnly;
+  if (verifiedRaw !== undefined && verifiedRaw !== "true" && verifiedRaw !== "false") {
+    return fail(c, 400, "verifiedOnly must be true or false");
+  }
+  const sort = query.sort ?? "recommended";
+  const sortOrders: Record<string, string> = {
+    recommended: "unit_price_minor ASC, total_sold DESC",
+    unit_asc: "unit_price_minor ASC, total_sold DESC",
+    price_asc: "price_minor ASC, total_sold DESC",
+    price_desc: "price_minor DESC, total_sold DESC",
+    points_desc: "points DESC, total_sold DESC",
+  };
+  if (!Object.hasOwn(sortOrders, sort)) return fail(c, 400, "Unsupported marketplace sort");
+  const search = (query.search ?? "").trim().slice(0, 120);
+  try {
+    // The source query takes a bounded active-package candidate set before filtering.
+    const result = await pool.query(
+      `WITH candidates AS (
+         SELECT p.id, p.vendor_id, p.name, p.points, p.price_minor, p.currency,
+                p.total_sold, p.created_at
+         FROM point_market_packages p
+         WHERE p.is_active = TRUE
+         ORDER BY p.created_at ASC, p.id ASC
+         LIMIT 200
+       ),
+       eligible AS (
+         SELECT p.id, p.name, p.points, p.price_minor, p.currency, p.total_sold,
+                v.id AS vendor_id, v.business_name, v.is_verified,
+                ROUND((p.price_minor::numeric / p.points) * 1000)::bigint AS unit_price_minor
+         FROM candidates p
+         JOIN point_market_vendors v ON v.id = p.vendor_id
+         WHERE v.status = 'approved'
+           AND ($1::boolean IS NOT TRUE OR v.is_verified = TRUE)
+           AND ($2::text = '' OR strpos(lower(p.name), lower($2)) > 0 OR strpos(lower(v.business_name), lower($2)) > 0)
+           AND ($3::numeric IS NULL OR p.price_minor >= $3 * 100)
+           AND ($4::numeric IS NULL OR p.price_minor <= $4 * 100)
+           AND ($5::numeric IS NULL OR p.points >= $5)
+           AND ($6::numeric IS NULL OR p.points <= $6)
+       )
+       SELECT * FROM eligible
+       ORDER BY ${sortOrders[sort]}
+       LIMIT 200`,
+      [verifiedRaw === "true", search, minPrice.value ?? null, maxPrice.value ?? null, minPoints.value ?? null, maxPoints.value ?? null],
+    );
+    return c.json(result.rows.map((row: QueryResultRow & {
+      id: string; name: string; points: string | number; price_minor: string | number;
+      currency: string; unit_price_minor: string | number; total_sold: string | number;
+      vendor_id: string; business_name: string; is_verified: boolean;
+    }) => ({
+      id: row.id,
+      name: row.name,
+      points: Number(row.points),
+      priceMinor: Number(row.price_minor),
+      currency: row.currency,
+      unitPriceMinor: Number(row.unit_price_minor),
+      totalSold: Number(row.total_sold),
+      vendorId: row.vendor_id,
+      vendorName: row.business_name,
+      vendorVerified: row.is_verified,
+    })));
+  } catch (error) {
+    console.error("Points marketplace read failed", error instanceof Error ? error.message : "unknown");
+    return fail(c, 503, "Marketplace data is not available yet");
+  }
+});
+
 app.get("/api/catalog", async (c) => {
   const limit = parseLimit(c.req.query("limit"));
   const tenantId = c.req.query("tenantId")?.trim();
@@ -894,34 +1274,36 @@ app.patch("/api/admin/users/:id", auth, adminOnly, async (c) => {
   return c.json({ user: result.rows[0] });
 });
 
+/**
+ * POST /api/admin/users/:id/wallet-adjust
+ *
+ * Body: { amount_ngn?: number, points_delta?: number, description?: string, idempotency_key?: string }
+ *
+ * NGN and points are independent: a NGN delta never touches points and vice
+ * versa. All validation, locking, idempotency and in-transaction audit
+ * behaviour lives in ./walletAdjust.ts so it can be tested without a database.
+ */
 app.post("/api/admin/users/:id/wallet-adjust", auth, adminOnly, async (c) => {
   const targetId = c.req.param("id");
-  const raw = await c.req.json().catch(() => ({})) as Record<string, unknown>;
-  const delta = Number(raw.amount_ngn ?? raw.amountNgn ?? raw.amount ?? 0);
-  const description = String(raw.description ?? raw.reason ?? "Admin wallet adjustment").trim();
-  if (!Number.isFinite(delta) || delta === 0) return fail(c, 400, "Non-zero amount required");
+  const raw = await c.req.json().catch(() => ({})) as unknown;
+  const parsed = parseWalletAdjustInput(raw);
+  if (!parsed.ok) return fail(c, 400, parsed.message);
+
   const client = await pool.connect();
   try {
-    await client.query("BEGIN");
-    const updated = await client.query(
-      "UPDATE app_users SET wallet_balance_ngn = GREATEST(0, wallet_balance_ngn + $1), points_balance = GREATEST(0, points_balance + $1), updated_at=NOW() WHERE id=$2 RETURNING wallet_balance_ngn",
-      [delta, targetId],
-    );
-    if (!updated.rows[0]) {
-      await client.query("ROLLBACK");
-      return fail(c, 404, "User not found");
+    const outcome = await applyWalletAdjustment(client, {
+      actorId: c.get("user").id,
+      targetId,
+      input: parsed.input,
+    });
+    if (outcome.ok) {
+      return c.json({
+        balance_after_ngn: outcome.balanceAfterNgn,
+        points_balance: outcome.pointsAfter,
+        replayed: outcome.replayed,
+      });
     }
-    const balanceAfter = Number(updated.rows[0].wallet_balance_ngn);
-    await client.query(
-      "INSERT INTO wallet_ledger (user_id, amount_ngn, balance_after_ngn, description, transaction_type) VALUES ($1, $2, $3, $4, 'admin_adjust')",
-      [targetId, delta, balanceAfter, description],
-    );
-    await client.query("COMMIT");
-    await recordAuditLog(c.get("user").id, "wallet.adjust", "user", targetId, { delta, balanceAfter, description });
-    return c.json({ balance_after_ngn: balanceAfter });
-  } catch {
-    await client.query("ROLLBACK").catch(() => undefined);
-    return fail(c, 500, "Failed to adjust wallet");
+    return fail(c, outcome.status, outcome.message);
   } finally {
     client.release();
   }
@@ -950,8 +1332,13 @@ app.get("/api/admin/audit-logs", auth, adminOnly, async (c) => {
       [limit],
     );
     return c.json({ logs: result.rows });
-  } catch {
-    return c.json({ logs: [] });
+  } catch (error) {
+    // An outage must never look like an empty trail. Returning { logs: [] } with
+    // a 200 let an administrator read "no privileged actions happened" during a
+    // period when audit reads (and possibly writes) were failing. 503 tells the
+    // client to render an explicit "unavailable" state instead.
+    console.error("Audit log read failed", error instanceof Error ? error.message : "unknown error");
+    return fail(c, 503, "Audit log storage is unavailable");
   }
 });
 
@@ -1030,38 +1417,158 @@ app.post("/api/admin/settings", auth, adminOnly, async (c) => {
   return c.json({ ok: true });
 });
 
+/**
+ * GET /api/admin/reports — dashboard metrics for the admin command center.
+ *
+ * Every number is counted from the table that actually defines it. The old
+ * version reported total users as the active-user count, hard-coded suspended
+ * users to zero and fell back to an empty object on failure, which made a dead
+ * or partial database indistinguishable from a healthy empty one.
+ *
+ * Each metric is independently guarded: a table that is missing (migration not
+ * yet applied) reports `null`, never `0`, so the frontend can render an
+ * "unavailable" state instead of presenting a fabricated zero as real data.
+ * The overall request only fails when the users table itself is unreachable.
+ */
 app.get("/api/admin/reports", auth, adminOnly, async (c) => {
-  const [usersCount, shipmentsCount, ordersCount, pendingShipments, tenantsCount, walletSum] = await Promise.all([
-    pool.query("SELECT COUNT(*) AS count FROM app_users"),
-    pool.query("SELECT COUNT(*) AS count FROM shipments"),
-    pool.query("SELECT COUNT(*) AS count FROM commerce_orders"),
-    pool.query("SELECT COUNT(*) AS count FROM shipments WHERE status='pending'"),
-    pool.query("SELECT COUNT(*) AS count FROM tenant_sites").catch(() => ({ rows: [{ count: 0 }] })),
-    pool.query("SELECT COALESCE(SUM(wallet_balance_ngn), 0) AS total FROM app_users").catch(() => ({ rows: [{ total: 0 }] })),
+  // Runs `sql`, returning `null` when the underlying table is absent or the
+  // query errors. This is a per-metric guard, not a way to hide failures: the
+  // caller receives `null` and must show the metric as unavailable.
+  const optional = async (sql: string, params: unknown[] = []): Promise<Record<string, unknown>[] | null> => {
+    try {
+      const result = await pool.query(sql, params);
+      return result.rows;
+    } catch {
+      return null;
+    }
+  };
+  const count = (rows: Record<string, unknown>[] | null): number | null =>
+    rows && rows[0] ? Number(rows[0].count ?? 0) : null;
+
+  // Users is the one table the platform cannot run without, so its failure is
+  // a real 503 rather than a masked zero.
+  let userRows: Record<string, unknown>[];
+  try {
+    userRows = (await pool.query(
+      `SELECT COUNT(*) AS total,
+              COUNT(*) FILTER (WHERE NOT is_suspended AND NOT is_terminated) AS active,
+              COUNT(*) FILTER (WHERE is_suspended) AS suspended,
+              COUNT(*) FILTER (WHERE is_terminated) AS terminated,
+              COUNT(*) FILTER (WHERE role = 'admin') AS admins,
+              COUNT(*) FILTER (WHERE created_at > NOW() - INTERVAL '7 days') AS new_7d,
+              COALESCE(SUM(wallet_balance_ngn), 0) AS wallet_ngn,
+              COALESCE(SUM(points_balance), 0) AS points
+       FROM app_users`,
+    )).rows;
+  } catch {
+    return fail(c, 503, "Reporting database is unavailable");
+  }
+
+  const users = userRows[0] ?? {};
+  const totalUsers = Number(users.total ?? 0);
+
+  const [
+    vendors, pendingVendors, approvedVendors, suspendedVendors,
+    tenants, lockedTenants,
+    shipments, pendingShipments, deliveredShipments,
+    orders, escrowOrders, disputedOrders,
+    kycPending, kycUnderReview, kycApproved, kycRejected,
+    documents, documents24h,
+    paymentsCompleted, paymentsFailed, paymentsPending, paymentsRefunded,
+    ledger24h,
+  ] = await Promise.all([
+    optional("SELECT COUNT(*) AS count FROM point_market_vendors"),
+    optional("SELECT COUNT(*) AS count FROM point_market_vendors WHERE status = 'pending'"),
+    optional("SELECT COUNT(*) AS count FROM point_market_vendors WHERE status = 'approved'"),
+    optional("SELECT COUNT(*) AS count FROM point_market_vendors WHERE status = 'suspended'"),
+    optional("SELECT COUNT(*) AS count FROM tenant_sites"),
+    optional("SELECT COUNT(*) AS count FROM tenant_sites WHERE lifecycle_status <> 'active'"),
+    optional("SELECT COUNT(*) AS count FROM shipments"),
+    optional("SELECT COUNT(*) AS count FROM shipments WHERE status = 'pending'"),
+    optional("SELECT COUNT(*) AS count FROM shipments WHERE status = 'delivered'"),
+    optional("SELECT COUNT(*) AS count FROM commerce_orders"),
+    optional("SELECT COUNT(*) AS count FROM commerce_orders WHERE status IN ('pending','paid','escrow')"),
+    optional("SELECT COUNT(*) AS count FROM commerce_orders WHERE status = 'disputed'"),
+    optional("SELECT COUNT(*) AS count FROM kyc_records WHERE status = 'submitted'"),
+    optional("SELECT COUNT(*) AS count FROM kyc_records WHERE status = 'under_review'"),
+    optional("SELECT COUNT(*) AS count FROM kyc_records WHERE status = 'approved'"),
+    optional("SELECT COUNT(*) AS count FROM kyc_records WHERE status = 'rejected'"),
+    optional("SELECT COUNT(*) AS count FROM user_documents"),
+    optional("SELECT COUNT(*) AS count FROM user_documents WHERE created_at > NOW() - INTERVAL '24 hours'"),
+    optional("SELECT COUNT(*) AS count FROM payment_records WHERE status = 'completed'"),
+    optional("SELECT COUNT(*) AS count FROM payment_records WHERE status = 'failed'"),
+    optional("SELECT COUNT(*) AS count FROM payment_records WHERE status = 'pending'"),
+    optional("SELECT COUNT(*) AS count FROM payment_records WHERE status = 'refunded'"),
+    optional("SELECT COUNT(*) AS count FROM wallet_ledger WHERE created_at > NOW() - INTERVAL '24 hours'"),
   ]);
-  const totalUsers = Number(usersCount.rows[0]?.count ?? 0);
-  const totalShipments = Number(shipmentsCount.rows[0]?.count ?? 0);
-  const totalOrders = Number(ordersCount.rows[0]?.count ?? 0);
-  const walletBalanceNgn = Number(walletSum.rows[0]?.total ?? 0);
+
   return c.json({
     totalUsers,
     users: totalUsers,
-    activeUsers: totalUsers,
-    suspendedUsers: 0,
-    totalShipments,
-    shipments: totalShipments,
-    totalOrders,
-    orders: totalOrders,
-    pendingShipments: Number(pendingShipments.rows[0]?.count ?? 0),
-    tenants: Number(tenantsCount.rows[0]?.count ?? 0),
-    walletBalanceNgn,
+    activeUsers: Number(users.active ?? 0),
+    suspendedUsers: Number(users.suspended ?? 0),
+    terminatedUsers: Number(users.terminated ?? 0),
+    adminUsers: Number(users.admins ?? 0),
+    newUsers7d: Number(users.new_7d ?? 0),
+    walletBalanceNgn: Number(users.wallet_ngn ?? 0),
+    pointsOutstanding: Number(users.points ?? 0),
+    vendors: count(vendors),
+    pendingVendors: count(pendingVendors),
+    approvedVendors: count(approvedVendors),
+    suspendedVendors: count(suspendedVendors),
+    tenants: count(tenants),
+    lockedTenants: count(lockedTenants),
+    totalShipments: count(shipments),
+    shipments: count(shipments),
+    pendingShipments: count(pendingShipments),
+    deliveredShipments: count(deliveredShipments),
+    totalOrders: count(orders),
+    orders: count(orders),
+    escrowPending: count(escrowOrders),
+    disputedOrders: count(disputedOrders),
+    pendingKyc: count(kycPending),
+    kycUnderReview: count(kycUnderReview),
+    verifiedKyc: count(kycApproved),
+    rejectedKyc: count(kycRejected),
+    documents: count(documents),
+    documents24h: count(documents24h),
+    paymentsCompleted: count(paymentsCompleted),
+    paymentsFailed: count(paymentsFailed),
+    paymentsPending: count(paymentsPending),
+    paymentsRefunded: count(paymentsRefunded),
+    ledgerEvents24h: count(ledger24h),
   });
 });
 
 app.get("/api/admin/analytics", auth, adminOnly, (c) => c.redirect("/api/admin/reports", 307));
 
 app.notFound((c) => c.json({ error: "Not found" }, 404));
+
+// PostgreSQL error codes that mean the database exists but the application
+// schema does not (or is half-migrated). Those are configuration failures, not
+// server bugs, and saying "internal server error" hides the actual fix.
+const SCHEMA_PROVISIONING_CODES = new Set(["42P01", "42P03", "42703", "42704", "42501"]);
+function isSchemaProvisioningError(error: unknown): boolean {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    "code" in error &&
+    typeof error.code === "string" &&
+    SCHEMA_PROVISIONING_CODES.has(error.code)
+  );
+}
+
 app.onError((error: Error, c) => {
+  if (isSchemaProvisioningError(error)) {
+    console.error("API not ready: database schema missing or incomplete", error.message);
+    return c.json(
+      {
+        error: "Service not ready: the database schema is missing or incomplete. Finish the Neon migration, then retry.",
+        code: "schema_missing",
+      },
+      503,
+    );
+  }
   console.error("Unhandled API error", error.message);
   return c.json({ error: "Internal server error" }, 500);
 });
@@ -1071,6 +1578,10 @@ app.onError((error: Error, c) => {
 const server = process.env.NODE_ENV === "test" ? undefined : serve({ fetch: app.fetch, port }, (info) => {
   console.log(`Cloudie Neon API listening on ${info.port}`);
 });
+
+// Bind the port first (liveness), then bring the schema up in the background so
+// a brand-new database is usable without a manual migration step.
+if (server && autoMigration.enabled) void provisionSchemaOnBoot();
 
 let shuttingDown = false;
 const shutdown = async () => {

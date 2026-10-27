@@ -22,6 +22,9 @@ The notifications, orders, and catalog list endpoints accept a bounded `limit` q
 ## Deployment
 A Render Blueprint is provided in the repository root at `render.yaml`. Review it before deployment, then set `DATABASE_URL` to the Neon **test** branch first and verify the health endpoint. Set `CORS_ORIGINS` to the exact frontend origin. Never expose database credentials or JWT secrets as `VITE_*` variables.
 
+### Schema provisioning on boot
+Set `DATABASE_URL` to the database the app should use and, if it is a pooled (`-pooler`) string, set `DIRECT_DATABASE_URL` to the direct string for that same branch. When the API starts and finds required tenant tables missing, it runs `scripts/migrate.mjs` once, in the background, so a brand-new database is usable without a manual step. It never touches a database whose schema is already complete, and it refuses to run against the disposable migration-test branch (identified by its `cloudie_migration_test_guard` table). Failures are logged and reported by `GET /ready` under `autoMigration`; set `CLOUDIE_AUTO_MIGRATE=false` to disable it and run `npm run migrate` by hand.
+
 ## Security and parity status
 - Public registration creates only the ordinary `user` role. It does not accept a role, tenant, wallet balance, or admin flag from the client.
 - Passwords use Node scrypt with random salts; the session cookie is HttpOnly, SameSite=Lax, Secure in production, and expires after eight hours. Session IDs are persisted in Neon, checked on authenticated requests, and revoked on logout. The separate frontend migration client currently stores a bearer token in sessionStorage; prefer a same-origin proxy with HttpOnly cookies before switching the production UI.

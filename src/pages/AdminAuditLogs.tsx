@@ -4,7 +4,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { Download, Search, ShieldCheck } from "lucide-react";
+import { Download, Search, ShieldAlert, ShieldCheck } from "lucide-react";
 import { useMemo, useState } from "react";
 import { AdminPageHeader, AdminEmpty, AdminSkeleton, downloadCsv, fmtDate } from "@/components/admin/shared";
 
@@ -46,13 +46,17 @@ const ACTION_FILTERS = [
 ] as const;
 
 export default function AdminAuditLogs() {
-  const logs = useQuery(api.admin.getAuditLogs, { limit: 1000 }) as AuditLog[] | undefined;
+  // Three states, never two: `undefined` = still loading, `null` = the trail
+  // could not be read (outage), array = records. Collapsing null into [] made a
+  // backend failure indistinguishable from a genuinely empty audit trail.
+  const logs = useQuery(api.admin.getAuditLogs, { limit: 1000 }) as AuditLog[] | null | undefined;
 
   const [search, setSearch] = useState("");
   const [actionFilter, setActionFilter] = useState("all");
   const [page, setPage] = useState(0);
 
-  const filtered = useMemo(() => {
+  const filtered = useMemo<AuditLog[] | null | undefined>(() => {
+    if (logs === null) return null;
     if (!logs) return undefined;
     let list = [...logs];
     if (actionFilter !== "all") list = list.filter((l) => l.action === actionFilter);
@@ -117,12 +121,30 @@ export default function AdminAuditLogs() {
 
       <div className="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
         <ShieldCheck className="h-3.5 w-3.5 text-green-600" />
-        {filtered === undefined ? "Loading…" : `${filtered.length.toLocaleString()} records`}
+        {filtered === null
+          ? "Audit trail unavailable"
+          : filtered === undefined
+            ? "Loading…"
+            : `${filtered.length.toLocaleString()} records`}
         {filtered && filtered.length > 0 && <span className="text-slate-300 dark:text-slate-600">·</span>}
         {filtered && filtered.length > 0 && <span>Page {page + 1} of {totalPages}</span>}
       </div>
 
-      {filtered === undefined ? (
+      {filtered === null ? (
+        <div
+          role="status"
+          className="flex flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-amber-300 bg-amber-50 py-12 text-center dark:border-amber-500/40 dark:bg-amber-500/10"
+        >
+          <ShieldAlert className="h-8 w-8 text-amber-500" />
+          <p className="text-sm font-medium text-amber-800 dark:text-amber-200">
+            Audit log storage is unavailable
+          </p>
+          <p className="max-w-md text-xs leading-relaxed text-amber-700 dark:text-amber-300">
+            This is an outage, not an empty trail. No conclusion about recorded privileged activity can be
+            drawn until the service recovers.
+          </p>
+        </div>
+      ) : filtered === undefined ? (
         <AdminSkeleton rows={6} />
       ) : filtered.length === 0 ? (
         <AdminEmpty message="No audit records match your filters." />

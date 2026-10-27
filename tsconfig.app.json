@@ -23,11 +23,16 @@
     "noFallthroughCasesInSwitch": true,
     "noUncheckedSideEffectImports": true,
     "noPropertyAccessFromIndexSignature": false,
+    // Pin the ambient types: @types/bun is only needed by the bun:test files,
+    // which live in tsconfig.test.json. Pulling it into the app program makes
+    // `tsc -b` take minutes instead of seconds.
+    "types": ["node", "vite/client"],
     "baseUrl": ".",
     "paths": {
       "@/*": ["./src/*"]
     }
   },
   "include": ["src", "vly-toolbar-readonly.tsx"],
+  "exclude": ["src/**/__tests__/**"]
   "exclude": ["api/**/*.ts", "tests/**/*.ts"]
 }

@@ -7,7 +7,7 @@
  *
  *   Landing.tsx   the visitor is offered a link to `/dashboard` at all
  *   main.tsx      `/dashboard` is registered INSIDE the `RequireAuth` layout
- *   RequireAuth   a signed-out visitor is sent to `/auth?returnTo=<intended>`
+ *   RequireAuth   a signed-out visitor is sent to `/login?returnTo=<intended>`
  *   Auth.tsx      the `returnTo` is honoured after sign-in, and the fallback
  *                 (used when there is no returnTo) is the dashboard too
  *
@@ -111,7 +111,7 @@ describe("landing page offers a direct route into the dashboard", () => {
 describe("/dashboard resolves to the real, guarded route", () => {
   test("the customer route table is wrapped in RequireAuth", () => {
     const layout = entry.indexOf(
-      "<Route element={<RequireAuth><AppLayout /></RequireAuth>}>",
+      "<Route element={<RequireAuth><AppShell /></RequireAuth>}>",
     );
     expect(layout).toBeGreaterThan(-1);
 
@@ -125,9 +125,9 @@ describe("/dashboard resolves to the real, guarded route", () => {
   });
 
   test("RequireAuth runs before the app shell, never the other way round", () => {
-    expect(entry).toContain("<RequireAuth><AppLayout /></RequireAuth>");
+    expect(entry).toContain("<RequireAuth><AppShell /></RequireAuth>");
     expect(
-      entry.indexOf("<RequireAuth><AppLayout /></RequireAuth>"),
+      entry.indexOf("<RequireAuth><AppShell /></RequireAuth>"),
     ).toBeLessThan(entry.indexOf("<Dashboard />"));
   });
 });
@@ -137,14 +137,17 @@ describe("a signed-out visitor is returned to the dashboard after signing in", (
     expect(guard).toContain(
       "const returnTo = `${location.pathname}${location.search}`;",
     );
+    // `/login` is the canonical sign-in route; `/auth` remains a legacy alias.
+    // Both honour returnTo, but the guard must send visitors to `/login`.
     expect(guard).toContain(
-      "to={`/auth?returnTo=${encodeURIComponent(returnTo)}`}",
+      "to={`/login?returnTo=${encodeURIComponent(returnTo)}`}",
     );
   });
 
   test("the redirect waits for auth to settle", () => {
-    const loading = guard.indexOf("if (isLoading)");
-    const redirect = guard.indexOf("if (!isAuthenticated)");
+    // Three states: the pending state is handled before either verdict.
+    const loading = guard.indexOf('if (status === "loading")');
+    const redirect = guard.indexOf('if (status === "anon")');
     expect(loading).toBeGreaterThan(-1);
     expect(redirect).toBeGreaterThan(loading);
   });

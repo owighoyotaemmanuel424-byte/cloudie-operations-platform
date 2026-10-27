@@ -1,61 +1,38 @@
-import { useCallback, useEffect, useState } from "react";
-import { getCachedNeonUser, getNeonToken, neonApi, type NeonUser } from "@/lib/neonApi";
+import { useCallback } from "react";
+import { neonApi } from "@/lib/neonApi";
+import { useSession } from "./useSession";
 
 /**
- * Neon-backed auth state for incremental migration.
- * This is deliberately separate from use-auth until the app's Convex data
- * dependencies are migrated, so existing routes are not silently broken.
+ * Backwards-compatible alias for the shared session.
+ *
+ * Kept so older imports do not create a second, independent auth state (which
+ * is exactly how a shell can decide "signed out" while the page is signed in).
+ * New code should use `useSession` or `useAuth`.
  */
 export function useNeonAuth() {
-  const [user, setUser] = useState<NeonUser | null>(() => getCachedNeonUser());
-  const [isLoading, setIsLoading] = useState(() => Boolean(getNeonToken()));
+  const { user, isAuthenticated, isLoading, setUser, signOut, refresh } = useSession();
 
-  const refresh = useCallback(async () => {
-    if (!getNeonToken()) {
-      setUser(null);
-      setIsLoading(false);
-      return null;
-    }
-    setIsLoading(true);
-    try {
-      const current = await neonApi.me();
-      setUser(current);
-      return current;
-    } catch {
-      setUser(null);
-      return null;
-    } finally {
-      setIsLoading(false);
-    }
-  }, []);
+  const login = useCallback(
+    async (email: string, password: string) => {
+      const next = await neonApi.login({ email, password });
+      setUser(next);
+      return next;
+    },
+    [setUser],
+  );
 
-  useEffect(() => {
-    void refresh();
-    const handleAuthChange = () => {
-      const cached = getCachedNeonUser();
-      setUser(cached);
-      if (!getNeonToken()) setIsLoading(false);
-    };
-    window.addEventListener("cloudie-auth-change", handleAuthChange);
-    return () => window.removeEventListener("cloudie-auth-change", handleAuthChange);
-  }, [refresh]);
-
-  const login = useCallback(async (email: string, password: string) => {
-    const next = await neonApi.login({ email, password });
-    setUser(next);
-    return next;
-  }, []);
-
-  const register = useCallback(async (name: string, email: string, password: string) => {
-    const next = await neonApi.register({ name, email, password });
-    setUser(next);
-    return next;
-  }, []);
+  const register = useCallback(
+    async (name: string, email: string, password: string) => {
+      const next = await neonApi.register({ name, email, password });
+      setUser(next);
+      return next;
+    },
+    [setUser],
+  );
 
   const logout = useCallback(async () => {
-    try { await neonApi.logout(); } finally { setUser(null); }
-  }, []);
+    await signOut();
+  }, [signOut]);
 
-  return { user, isAuthenticated: Boolean(user), isLoading, login, register, logout, refresh };
+  return { user, isAuthenticated, isLoading, login, register, logout, refresh };
 }
-

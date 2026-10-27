@@ -65,6 +65,16 @@
   --color-vtu-brand-glo: var(--vtu-brand-glo);
   --color-vtu-brand-9mobile: var(--vtu-brand-9mobile);
 
+  /* Workspace accents — navigation only. Each workspace owns one hue so it is
+     recognisable before its label is read; these never encode status. */
+  --color-ws-personal: var(--ws-personal);
+  --color-ws-shipments: var(--ws-shipments);
+  --color-ws-ticketing: var(--ws-ticketing);
+  --color-ws-business: var(--ws-business);
+  --color-ws-services: var(--ws-services);
+  --color-ws-marketplace: var(--ws-marketplace);
+  --color-ws-admin: var(--ws-admin);
+
   /* Motion: one place to tune every transition in the product. */
   --ease-out-quint: cubic-bezier(0.22, 1, 0.36, 1);
   --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
@@ -130,6 +140,16 @@
   --error: #ef4444;
   --info: #3b82f6;
   --destructive: #ef4444;
+
+  /* Workspace accents. Tuned for a black canvas: each hue is lifted enough to
+     clear 4.5:1 on the sidebar surface without becoming neon. */
+  --ws-personal: hsl(221 78% 72%);
+  --ws-shipments: hsl(38 82% 62%);
+  --ws-ticketing: hsl(262 72% 74%);
+  --ws-business: hsl(152 58% 56%);
+  --ws-services: hsl(199 82% 64%);
+  --ws-marketplace: hsl(340 78% 68%);
+  --ws-admin: hsl(0 78% 66%);
 
   /* Sidebar */
   --sidebar-foreground: #ffffff;
