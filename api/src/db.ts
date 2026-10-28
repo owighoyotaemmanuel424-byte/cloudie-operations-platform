@@ -1,6 +1,6 @@
 import { createClient, type Client, type Transaction } from "@libsql/client";
 
-export type QueryResultRow = Record<string, unknown>;
+export type QueryResultRow = Record<string, any>;
 export type QueryResult<R extends QueryResultRow = QueryResultRow> = {
   rows: R[];
   rowCount: number;
