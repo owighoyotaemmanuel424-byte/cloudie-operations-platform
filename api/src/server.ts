@@ -3,27 +3,16 @@ import { Hono, type Context, type MiddlewareHandler } from "hono";
 import { cors } from "hono/cors";
 import { getCookie, setCookie, deleteCookie } from "hono/cookie";
 import { SignJWT, jwtVerify } from "jose";
-import { Pool, type QueryResultRow } from "pg";
+import { pool, type QueryResultRow } from "./db.js";
 import { promisify } from "node:util";
 import { randomBytes, scrypt as scryptCallback, timingSafeEqual } from "node:crypto";
 import { z } from "zod";
 
 const scrypt = promisify(scryptCallback);
 const port = Number(process.env.PORT ?? 8787);
-const databaseUrl = process.env.DATABASE_URL;
 const jwtSecretValue = process.env.JWT_SECRET;
-if (!databaseUrl) throw new Error("DATABASE_URL is required");
 if (!jwtSecretValue || Buffer.byteLength(jwtSecretValue) < 32) throw new Error("JWT_SECRET must be at least 32 bytes");
 const jwtSecret = new TextEncoder().encode(jwtSecretValue);
-
-export const pool = new Pool({
-  connectionString: databaseUrl,
-  max: Number(process.env.PG_POOL_MAX ?? 10),
-  idleTimeoutMillis: 30_000,
-  connectionTimeoutMillis: 10_000,
-  ssl: ["localhost", "127.0.0.1", "::1"].includes(new URL(databaseUrl).hostname) ? undefined : { rejectUnauthorized: true },
-});
-pool.on("error", (error: Error) => console.error("Unexpected idle PostgreSQL client error", error.message));
 
 type User = { id: string; email: string; name: string | null; role: "admin" | "user" | "vendor"; is_suspended: boolean; is_terminated: boolean };
 type Variables = { user: User };
@@ -237,7 +226,7 @@ async function recordAuditLog(actorUserId: string, action: string, targetType: s
 const healthHandler = async (c: Context) => {
   try {
     const result = await pool.query("SELECT 1 AS ok");
-    return c.json({ ok: result.rows[0]?.ok === 1, service: "cloudie-neon-api", database: "connected", timestamp: new Date().toISOString() });
+    return c.json({ ok: result.rows[0]?.ok === 1, service: "cloudie-turso-api", database: "connected", timestamp: new Date().toISOString() });
   } catch {
     return c.json({ ok: false, service: "cloudie-neon-api", database: "unavailable" }, 503);
   }
@@ -1072,8 +1061,8 @@ app.onError((error: Error, c) => {
 
 // Export the Hono app for isolated HTTP-level tests. Tests set NODE_ENV=test before
 // importing this module so they never bind a port or require a live database.
-const server = process.env.NODE_ENV === "test" ? undefined : serve({ fetch: app.fetch, port }, (info) => {
-  console.log(`Cloudie Neon API listening on ${info.port}`);
+const server = process.env.NODE_ENV === "test" || process.env.VERCEL ? undefined : serve({ fetch: app.fetch, port }, (info) => {
+  console.log(`Cloudie Turso API listening on ${info.port}`);
 });
 
 let shuttingDown = false;
