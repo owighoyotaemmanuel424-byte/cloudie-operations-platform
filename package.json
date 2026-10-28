@@ -16,13 +16,16 @@
     "build:freebuff": "npx convex deploy --cmd \"npm run build\" --cmd-url-env-var-name VITE_CONVEX_URL",
     "deploy:convex": "npx convex deploy",
     "migrate": "node api/scripts/migrate.mjs",
-    "migrate:dry-run": "node api/scripts/migrate.mjs --dry-run"
+    "migrate:dry-run": "node api/scripts/migrate.mjs --dry-run",
+    "migrate:turso": "node api/scripts/migrate-turso.mjs",
+    "migrate:turso:dry-run": "node api/scripts/migrate-turso.mjs --dry-run"
   },
   "dependencies": {
     "@auth/core": "^0.37.4",
     "@convex-dev/auth": "^0.0.90",
     "@hookform/resolvers": "^5.2.2",
     "@jridgewell/trace-mapping": "^0.3.31",
+    "@libsql/client": "^0.18.0",
     "@oslojs/crypto": "^1.0.1",
     "@radix-ui/react-accordion": "^1.2.12",
     "@radix-ui/react-alert-dialog": "^1.1.15",
