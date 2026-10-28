@@ -176,7 +176,7 @@ test("rejects malformed registration and login payloads before database access",
   assert.equal(login.status, 400);
 });
 
-test("returns 503 when the configured PostgreSQL database is unavailable", async () => {
+test("returns 503 when the configured Turso database is unavailable", async () => {
   const mutablePool = pool as unknown as { query: (...args: unknown[]) => Promise<unknown> };
   const originalQuery = mutablePool.query;
   mutablePool.query = async () => { throw new Error("simulated database outage"); };
@@ -185,7 +185,7 @@ test("returns 503 when the configured PostgreSQL database is unavailable", async
     assert.equal(response.status, 503);
     assert.deepEqual(await response.json(), {
       ok: false,
-      service: "cloudie-neon-api",
+      service: "cloudie-turso-api",
       database: "unavailable",
     });
   } finally {
