@@ -442,6 +442,23 @@ app.get("/api/wallet/ledger", auth, async (c) => {
   return c.json({ entries: result.rows });
 });
 
+app.get("/api/service-hub/overview", auth, async (c) => {
+  const userId = c.get("user").id;
+  const [wallet, shipments, orders, notifications] = await Promise.all([
+    pool.query("SELECT wallet_balance_ngn, points_balance FROM app_users WHERE id=$1", [userId]),
+    pool.query("SELECT COUNT(*) AS count FROM shipments WHERE user_id=$1", [userId]),
+    pool.query("SELECT COUNT(*) AS count FROM commerce_orders WHERE user_id=$1", [userId]),
+    pool.query("SELECT COUNT(*) AS count FROM user_notifications WHERE user_id=$1 AND read_at IS NULL", [userId]),
+  ]);
+  return c.json({
+    walletBalanceNgn: Number(wallet.rows[0]?.wallet_balance_ngn ?? 0),
+    pointsBalance: Number(wallet.rows[0]?.points_balance ?? 0),
+    shipmentCount: Number(shipments.rows[0]?.count ?? 0),
+    orderCount: Number(orders.rows[0]?.count ?? 0),
+    unreadNotifications: Number(notifications.rows[0]?.count ?? 0),
+  });
+});
+
 /* ════════════════════════════════════════════════════════════════════
    SHIPMENTS & PUBLIC TRACKING
    ════════════════════════════════════════════════════════════════════ */
@@ -773,6 +790,100 @@ app.get("/api/orders", auth, async (c) => {
   return c.json({ orders: result.rows });
 });
 
+/* Support desk persistence and ticket ownership checks. */
+const supportTicketSchema = z.object({
+  subject: z.string().trim().min(3).max(180),
+  category: z.string().trim().min(1).max(60).default("general"),
+  priority: z.enum(["low", "normal", "high", "urgent"]).default("normal"),
+  message: z.string().trim().min(1).max(5000).optional(),
+  tenant_id: z.string().optional(),
+  tenantId: z.string().optional(),
+});
+
+app.get("/api/support/tickets", auth, async (c) => {
+  const user = c.get("user");
+  const limit = parseLimit(c.req.query("limit"));
+  const result = user.role === "admin"
+    ? await pool.query("SELECT id,user_id,tenant_id,subject,category,priority,status,created_at,updated_at,closed_at FROM support_tickets ORDER BY updated_at DESC LIMIT $1", [limit])
+    : await pool.query("SELECT id,user_id,tenant_id,subject,category,priority,status,created_at,updated_at,closed_at FROM support_tickets WHERE user_id=$1 ORDER BY updated_at DESC LIMIT $2", [user.id, limit]);
+  return c.json({ tickets: result.rows });
+});
+
+app.get("/api/support/tickets/:id", auth, async (c) => {
+  const user = c.get("user");
+  const id = c.req.param("id");
+  const result = await pool.query("SELECT id,user_id,tenant_id,subject,category,priority,status,created_at,updated_at,closed_at FROM support_tickets WHERE id=$1", [id]);
+  const ticket = result.rows[0];
+  if (!ticket) return fail(c, 404, "Support ticket not found");
+  if (user.role !== "admin" && ticket.user_id !== user.id) return fail(c, 403, "Access denied to this ticket");
+  const messages = user.role === "admin"
+    ? await pool.query("SELECT id,ticket_id,user_id,message,is_internal,created_at FROM support_ticket_messages WHERE ticket_id=$1 ORDER BY created_at ASC", [id])
+    : await pool.query("SELECT id,ticket_id,user_id,message,is_internal,created_at FROM support_ticket_messages WHERE ticket_id=$1 AND is_internal=0 ORDER BY created_at ASC", [id]);
+  return c.json({ ticket, messages: messages.rows });
+});
+
+app.post("/api/support/tickets", auth, async (c) => {
+  const parsed = await readJson(c, supportTicketSchema);
+  if ("error" in parsed) return fail(c, 400, "Invalid support ticket details");
+  const user = c.get("user");
+  const id = uuid();
+  const tenantId = parsed.data.tenant_id ?? parsed.data.tenantId ?? null;
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    const created = await client.query(
+      "INSERT INTO support_tickets (id,user_id,tenant_id,subject,category,priority) VALUES ($1,$2,$3,$4,$5,$6) RETURNING *",
+      [id, user.id, tenantId, parsed.data.subject, parsed.data.category, parsed.data.priority],
+    );
+    if (parsed.data.message) {
+      await client.query("INSERT INTO support_ticket_messages (ticket_id,user_id,message) VALUES ($1,$2,$3)", [id, user.id, parsed.data.message]);
+    }
+    await client.query("COMMIT");
+    return c.json({ id, ticket: created.rows[0] }, 201);
+  } catch {
+    await client.query("ROLLBACK").catch(() => undefined);
+    return fail(c, 500, "Unable to create support ticket");
+  } finally {
+    await client.release();
+  }
+});
+
+app.post("/api/support/tickets/:id/reply", auth, async (c) => {
+  const user = c.get("user");
+  const id = c.req.param("id");
+  const parsed = await readJson(c, z.object({ message: z.string().trim().min(1).max(5000) }));
+  if ("error" in parsed) return fail(c, 400, "A message is required");
+  const found = await pool.query("SELECT id,user_id,status FROM support_tickets WHERE id=$1", [id]);
+  const ticket = found.rows[0];
+  if (!ticket) return fail(c, 404, "Support ticket not found");
+  if (user.role !== "admin" && ticket.user_id !== user.id) return fail(c, 403, "Access denied to this ticket");
+  if (ticket.status === "closed") return fail(c, 409, "This ticket is closed");
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    await client.query("INSERT INTO support_ticket_messages (ticket_id,user_id,message) VALUES ($1,$2,$3)", [id, user.id, parsed.data.message]);
+    await client.query("UPDATE support_tickets SET status=$1,updated_at=CURRENT_TIMESTAMP WHERE id=$2", [user.role === "admin" ? "waiting" : "open", id]);
+    await client.query("COMMIT");
+    return c.json({ ok: true });
+  } catch {
+    await client.query("ROLLBACK").catch(() => undefined);
+    return fail(c, 500, "Unable to send reply");
+  } finally {
+    await client.release();
+  }
+});
+
+app.post("/api/support/tickets/:id/close", auth, async (c) => {
+  const user = c.get("user");
+  const id = c.req.param("id");
+  const found = await pool.query("SELECT id,user_id FROM support_tickets WHERE id=$1", [id]);
+  const ticket = found.rows[0];
+  if (!ticket) return fail(c, 404, "Support ticket not found");
+  if (user.role !== "admin" && ticket.user_id !== user.id) return fail(c, 403, "Access denied to this ticket");
+  await pool.query("UPDATE support_tickets SET status='closed',closed_at=CURRENT_TIMESTAMP,updated_at=CURRENT_TIMESTAMP WHERE id=$1", [id]);
+  return c.json({ ok: true });
+});
+
 /* ════════════════════════════════════════════════════════════════════
    NOTIFICATIONS & TENANTS
    ════════════════════════════════════════════════════════════════════ */
@@ -852,6 +963,15 @@ app.get("/api/admin/users", auth, adminOnly, async (c) => {
     "SELECT id,email,name,role,wallet_balance_ngn,points_balance,is_suspended,is_terminated,created_at FROM app_users ORDER BY created_at DESC LIMIT $1", [limit],
   );
   return c.json({ users: result.rows });
+});
+
+app.get("/api/admin/users/:id", auth, adminOnly, async (c) => {
+  const result = await pool.query(
+    "SELECT id,email,name,role,organization_name,wallet_balance_ngn,points_balance,is_suspended,is_terminated,created_at,updated_at FROM app_users WHERE id=$1",
+    [c.req.param("id")],
+  );
+  if (!result.rows[0]) return fail(c, 404, "User not found");
+  return c.json({ user: result.rows[0] });
 });
 
 const updateUserStatusSchema = z.object({
