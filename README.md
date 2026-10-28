@@ -114,3 +114,41 @@ npm --prefix api test
 # Live deployment smoke check against cloudie.wuaze.com & Render API
 npm run smoke:live
 ```
+
+
+---
+
+## 5. Vercel + Turso migration checkpoint (October 2026)
+
+The repository now includes a read-only Vercel function at `/api/turso-health`. It checks that `TURSO_DATABASE_URL` is configured and can execute `SELECT 1`; it never runs migrations or writes business data. A successful response proves connectivity only, **not** that the full Cloudie API has been migrated.
+
+### Vercel setup
+
+1. Import/reuse this existing Git repository in Vercel; do not create a duplicate project if one already exists.
+2. Keep the root directory at the repository root. The existing Vite SPA build remains `npm run build`, output directory `dist`.
+3. Set `TURSO_DATABASE_URL` and `TURSO_AUTH_TOKEN` as server-side Vercel environment variables for Preview and Production. Never prefix either with `VITE_`.
+4. Set a random `JWT_SECRET` of at least 32 bytes for the current API runtime, and configure exact allowed origins in `CORS_ORIGINS`.
+5. Deploy a preview first and request `/api/turso-health`. Expected success is HTTP 200 with `{"ok":true,"database":"turso",...}`; HTTP 503 means the database is not configured or unreachable. The endpoint intentionally does not expose provider error details.
+
+### Important cutover gate
+
+This checkpoint is **not** a completed production database migration. The current `api/src/server.ts` still imports `pg` and requires `DATABASE_URL`; its full route set is PostgreSQL-oriented. The frontend still has Convex dependencies and the existing README/migration inventory documents functionality not yet covered by the replacement API. The Turso schema under `migrations/turso/` is only foundational and is not equivalent to the full PostgreSQL schema or the Convex application data model.
+
+Therefore:
+- Do not switch production traffic or remove Convex/Neon credentials yet.
+- Do not run a production data migration until a verified backup, complete SQLite-compatible schema, conversion of all PostgreSQL SQL/transaction behavior, and a row-by-row reconciliation plan are ready.
+- Keep the existing PostgreSQL/Convex services intact as the rollback path.
+- A Vercel static SPA deployment alone does not route the existing remote API calls to the new Turso backend. API parity and frontend endpoint cutover remain required.
+
+### Migration commands
+
+```bash
+npm run migrate:turso:dry-run
+# Only after TURSO_DATABASE_URL/TURSO_AUTH_TOKEN point to a non-production test database:
+npm run migrate:turso
+npm --prefix api run typecheck
+npm --prefix api test
+npm run build
+```
+
+The commands above have not been run against the user's remote Turso/Vercel resources in this session. Do not treat documentation or the health probe as proof that schema migration, data transfer, feature parity, or deployment has completed.
