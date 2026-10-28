@@ -155,6 +155,10 @@ CREATE TABLE IF NOT EXISTS banking_ledger_entries (
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 CREATE INDEX IF NOT EXISTS banking_entries_group_idx ON banking_ledger_entries(ledger_group_id);
+CREATE TRIGGER IF NOT EXISTS banking_ledger_groups_require_draft_insert
+BEFORE INSERT ON banking_ledger_groups
+WHEN NEW.status = 'posted'
+BEGIN SELECT RAISE(ABORT, 'Create ledger groups as draft and post only after validation'); END;
 CREATE TRIGGER IF NOT EXISTS banking_ledger_groups_validate_posted
 BEFORE UPDATE OF status ON banking_ledger_groups
 WHEN NEW.status = 'posted'
