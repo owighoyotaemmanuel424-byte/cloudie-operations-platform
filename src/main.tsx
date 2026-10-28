@@ -5,8 +5,7 @@ import { RequireAuth } from "@/components/RequireAuth";
 import { RequireAdmin } from "@/components/RequireAdmin";
 import { ThemeProvider } from "@/components/ThemeProvider";
 import { VlyToolbar } from "../vly-toolbar-readonly.tsx";
-import { ConvexAuthProvider } from "@convex-dev/auth/react";
-import { ConvexReactClient } from "convex/react";
+import { ConvexAuthProvider } from "@/lib/neonClient";
 import React, { StrictMode, useEffect, lazy, Suspense } from "react";
 import { createRoot } from "react-dom/client";
 import { BrowserRouter, Route, Routes, useLocation } from "react-router";
@@ -304,8 +303,6 @@ class RootErrorBoundary extends React.Component<
   }
 }
 
-const convexUrl = (import.meta.env.VITE_CONVEX_URL as string) || "https://placeholder-convex.cloud";
-const convex = new ConvexReactClient(convexUrl);
 
 // Register the Cloudie service worker (offline fallback + static asset caching).
 // Production only: in development the managed dev server serves assets directly
@@ -388,7 +385,7 @@ createRoot(document.getElementById("root")!).render(
       <ToolbarErrorBoundary>
         <VlyToolbar />
       </ToolbarErrorBoundary>
-      <ConvexAuthProvider client={convex}>
+      <ConvexAuthProvider>
         <ThemeProvider>
           <BrowserRouter>
             <PlatformBranding />
