@@ -2,7 +2,7 @@
 
 # Cloudie Operations Platform
 
-Production-ready multi-service operations platform powered by **React + Vite + TypeScript** on the frontend, **Hono + Node.js** on Render (`api/`), and **Neon PostgreSQL** (`migrations/`).
+Production-ready multi-service operations platform powered by **React + Vite + TypeScript** on the frontend, **Hono + Node.js** in `api/`, and a prepared **Turso/libSQL** persistence layer. The existing Convex runtime and PostgreSQL API remain in the repository until feature-parity cutover validation is complete.
 
 ---
 
@@ -11,12 +11,27 @@ Production-ready multi-service operations platform powered by **React + Vite + T
 | Layer | Technology / Hosting | Location |
 | --- | --- | --- |
 | **Frontend SPA** | React 19, Vite, TypeScript, Tailwind CSS (InfinityFree `htdocs`) | `src/`, `public/` |
-| **Backend API** | Node.js 20+, Hono, Zod, `pg`, JWT + Session Cookies + CSRF (Render) | `api/src/server.ts`, `render.yaml` |
-| **Database** | Neon PostgreSQL with ordered SHA-256 verified migrations | `migrations/001_*.sql` – `006_*.sql` |
+| **Backend API** | Node.js 20+, Hono, Zod, JWT + Session Cookies + CSRF | `api/src/server.ts` |
+| **Database** | Turso/libSQL migration layer; legacy PostgreSQL migrations retained for rollback/reference | `migrations/turso/`, `migrations/001_*.sql` |
 
 ---
 
-## 1. Database Setup & Migrations (Neon PostgreSQL)
+## 1. Database Setup & Migrations (Turso/libSQL)
+
+Turso credentials are server-only. Add `TURSO_DATABASE_URL` and `TURSO_AUTH_TOKEN` to Vercel Preview and Production environments, then run the migration runner from a trusted environment. No remote migration is claimed until it has been run against the actual database.
+
+```bash
+# List Turso migrations without connecting
+npm run migrate:turso:dry-run
+
+# Apply Turso migrations
+TURSO_DATABASE_URL="libsql://your-database-your-org.turso.io" TURSO_AUTH_TOKEN="<token>" npm run migrate:turso
+```
+
+`migrations/turso/` currently contains the foundational auth/session, settings, and wallet tables. The full Convex schema and API parity migration is still required before switching production traffic; do not remove Convex or the PostgreSQL migration path yet.
+
+### Legacy PostgreSQL migrations
+
 
 Ordered SQL migrations live in [`migrations/`](./migrations/) and are managed by [`api/scripts/migrate.mjs`](./api/scripts/migrate.mjs), which acquires a PostgreSQL advisory lock and verifies SHA-256 checksums in `schema_migrations`.
 
@@ -46,7 +61,9 @@ The backend service is defined in [`render.yaml`](./render.yaml) with `rootDir: 
 | Variable | Description |
 | --- | --- |
 | `NODE_ENV` | `production` |
-| `DATABASE_URL` | Neon PostgreSQL connection string (`sslmode=require`) |
+| `TURSO_DATABASE_URL` | Turso/libSQL URL, server-side only |
+| `TURSO_AUTH_TOKEN` | Turso auth token, server-side only |
+| `DATABASE_URL` | Legacy PostgreSQL connection string during rollback/cutover |
 | `JWT_SECRET` | Random 32+ byte secret used to sign session tokens |
 | `CORS_ORIGINS` | `https://cloudie.wuaze.com,http://localhost:5173,http://localhost:3000` |
 

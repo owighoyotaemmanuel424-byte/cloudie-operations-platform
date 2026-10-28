@@ -14,10 +14,13 @@
     "test": "node --import tsx --test src/server.smoke.ts",
     "migrate": "node scripts/migrate.mjs",
     "migrate:dry-run": "node scripts/migrate.mjs --dry-run",
+    "migrate:turso": "node scripts/migrate-turso.mjs",
+    "migrate:turso:dry-run": "node scripts/migrate-turso.mjs --dry-run",
     "reconcile": "node scripts/reconcile-convex-migration.mjs"
   },
   "dependencies": {
     "@hono/node-server": "^1.19.5",
+    "@libsql/client": "^0.18.0",
     "hono": "^4.10.7",
     "jose": "^6.1.3",
     "pg": "^8.16.3",
