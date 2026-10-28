@@ -12,6 +12,7 @@ export default defineConfig({
     alias: {
       "@": path.resolve(__dirname, "./src"),
       "convex/react": path.resolve(__dirname, "./src/lib/neonClient.tsx"),
+      "convex/server": path.resolve(__dirname, "./src/lib/convexServerCompat.ts"),
       "@convex-dev/auth/react": path.resolve(__dirname, "./src/lib/neonClient.tsx"),
     },
     // Force a single copy of React across all packages (including vlyPlugin).
