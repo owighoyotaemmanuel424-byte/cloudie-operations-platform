@@ -1,7 +1,7 @@
 CREATE TABLE IF NOT EXISTS app_users (
   id TEXT PRIMARY KEY,
   name TEXT,
-  email TEXT NOT NULL UNIQUE COLLATE NOCASE,
+  email TEXT COLLATE NOCASE,
   role TEXT NOT NULL DEFAULT 'user' CHECK (role IN ('admin', 'user', 'vendor')),
   password_hash TEXT,
   is_suspended INTEGER NOT NULL DEFAULT 0,
@@ -16,10 +16,13 @@ CREATE TABLE IF NOT EXISTS api_sessions (
   id TEXT PRIMARY KEY,
   user_id TEXT NOT NULL REFERENCES app_users(id) ON DELETE CASCADE,
   expires_at TEXT NOT NULL,
-  revoked_at TEXT
+  revoked_at TEXT,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 CREATE INDEX IF NOT EXISTS api_sessions_user_idx ON api_sessions(user_id, expires_at);
 CREATE INDEX IF NOT EXISTS app_users_email_idx ON app_users(email);
+CREATE UNIQUE INDEX IF NOT EXISTS app_users_email_unique_idx ON app_users(email COLLATE NOCASE) WHERE email IS NOT NULL;
+CREATE INDEX IF NOT EXISTS api_sessions_expiry_idx ON api_sessions(expires_at) WHERE revoked_at IS NULL;
 
 CREATE TABLE IF NOT EXISTS platform_settings (
   key TEXT PRIMARY KEY,
