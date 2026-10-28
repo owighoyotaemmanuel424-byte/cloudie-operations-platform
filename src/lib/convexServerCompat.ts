@@ -7,16 +7,20 @@ const FUNCTION_NAME_SYMBOL = Symbol.for("functionName");
 
 type ApiReference = ((...args: unknown[]) => unknown) & Record<PropertyKey, unknown>;
 
+function referenceName(path: string[]): string {
+  if (path.length < 2) return path[0] ?? "";
+  return `${path.slice(0, -1).join("/") }:${path[path.length - 1]}`;
+}
+
 function createReference(path: string[]): ApiReference {
   const target = function apiReference() { return createReference(path); };
   return new Proxy(target as ApiReference, {
     get(_target, property) {
       if (property === "_name" || property === FUNCTION_NAME_SYMBOL) {
-        if (path.length === 0) return "";
-        return path.length === 1 ? path[0] : `${path[0]}:${path.slice(1).join(".")}`;
+        return referenceName(path);
       }
       if (property === "then") return undefined;
-      if (property === "toJSON") return () => ({ _name: path.length > 1 ? `${path[0]}:${path.slice(1).join(".")}` : path[0] ?? "" });
+      if (property === "toJSON") return () => ({ _name: referenceName(path) });
       if (property === Symbol.toStringTag) return "CloudieApiReference";
       return createReference([...path, String(property)]);
     },
