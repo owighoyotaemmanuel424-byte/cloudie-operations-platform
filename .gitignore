@@ -9,3 +9,7 @@ api/dist
 # `convex deploy --cmd "<build>"` runs the build BEFORE it regenerates this
 # directory, so a checkout without it fails `tsc -b` on every @/convex/_generated
 # import.
+
+# Private one-time database exports; never commit customer records or password hashes.
+/backups/
+/cloudie-postgres-export-*.json
