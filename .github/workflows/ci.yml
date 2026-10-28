@@ -51,12 +51,10 @@ jobs:
       # The migration trace records every Convex function the frontend still
       # calls and every API route that exists. A stale committed trace would
       # understate the remaining Convex-to-Neon work, so it is verified here.
-      - name: Convex-to-Neon migration trace is current
+      - name: Convex-to-Turso migration trace is current
         run: node scripts/trace-convex-usage.mjs --check
 
       - name: Production build
-        env:
-          VITE_NEON_API_URL: ${{ vars.VITE_NEON_API_URL || 'https://cloudie-operations-api-stage.onrender.com' }}
         run: npm run build
 
       - name: Verify production build assets and .htaccess
