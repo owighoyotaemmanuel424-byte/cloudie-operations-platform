@@ -1,8 +1,8 @@
-> **Deployment / migration status (verified from repository):** The frontend is still Convex-dependent. The Neon API under `api/` is a migration scaffold, not yet a complete replacement for Convex data, payments, VTU providers, and wallet writes. Do not remove the remaining Convex runtime or switch customer traffic solely because the Neon API health endpoint responds; complete feature parity, test against a staging database, and plan credential/data migration first. The free-hosting build artifact is produced by `.github/workflows/infinityfree-build.yml`; it does not automatically upload files to InfinityFree `htdocs`. See `migrations/STATUS.md` and `api/README.md` before changing production routing.
+> **Deployment / migration status (verified from repository):** The Vercel backend now routes `/api/*` to a Hono function backed by Turso/libSQL. The frontend still imports Convex authentication/data hooks, and the current Turso schema/API do not yet provide complete feature parity or a verified data import. Do not delete Convex data or switch customer traffic until feature parity and staging tests pass. The free-hosting build artifact is produced by `.github/workflows/infinityfree-build.yml`; it does not automatically upload files to InfinityFree `htdocs`. See `migrations/STATUS.md` and `api/README.md` before changing production routing.
 
 # Cloudie Operations Platform
 
-Production-ready multi-service operations platform powered by **React + Vite + TypeScript** on the frontend, **Hono + Node.js** in `api/`, and a prepared **Turso/libSQL** persistence layer. The existing Convex runtime and PostgreSQL API remain in the repository until feature-parity cutover validation is complete.
+Production-ready multi-service operations platform powered by **React + Vite + TypeScript** on the frontend, **Hono + Node.js** in `api/`, and a prepared **Turso/libSQL** persistence layer. The Convex frontend runtime remains during the staged cutover; the API database adapter now targets Turso/libSQL. Legacy PostgreSQL migration files are retained as historical migration references.
 
 ---
 
@@ -48,22 +48,22 @@ DATABASE_URL="postgresql://<user>:<password>@<neon-host>/<dbname>?sslmode=requir
 
 ---
 
-## 2. Backend API (Render: `cloudie-operations-api-stage`)
+## 2. Backend API (Vercel Functions + Turso)
 
-The backend service is defined in [`render.yaml`](./render.yaml) with `rootDir: api`.
+The API is exposed through [`api/[...path].ts`](./api/%5B...path%5D.ts) and the repository-root [`vercel.json`](./vercel.json). Deploy the repository root to Vercel; `/api/*` is handled by Hono.
 
 - **Build command:** `npm install && npm run build`
 - **Start command:** `npm run start`
 - **Health check endpoint:** `/healthz` (database readiness at `/readyz`)
 
-### Required Render Environment Variables
+### Required Vercel Environment Variables
 
 | Variable | Description |
 | --- | --- |
 | `NODE_ENV` | `production` |
 | `TURSO_DATABASE_URL` | Turso/libSQL URL, server-side only |
 | `TURSO_AUTH_TOKEN` | Turso auth token, server-side only |
-| `DATABASE_URL` | Legacy PostgreSQL connection string during rollback/cutover |
+| `VITE_API_BASE_URL` | Optional only for cross-origin API deployments; leave unset for same-origin Vercel routing |
 | `JWT_SECRET` | Random 32+ byte secret used to sign session tokens |
 | `CORS_ORIGINS` | `https://cloudie.wuaze.com,http://localhost:5173,http://localhost:3000` |
 
@@ -83,7 +83,7 @@ InfinityFree serves the compiled static SPA from `htdocs/` while all API request
 ### Build Command
 
 ```bash
-VITE_NEON_API_URL=https://cloudie-operations-api-stage.onrender.com npm run build
+npm run build
 ```
 
 ### InfinityFree Upload Checklist
@@ -132,7 +132,7 @@ The repository now includes a read-only Vercel function at `/api/turso-health`. 
 
 ### Important cutover gate
 
-This checkpoint is **not** a completed production database migration. The current `api/src/server.ts` still imports `pg` and requires `DATABASE_URL`; its full route set is PostgreSQL-oriented. The frontend still has Convex dependencies and the existing README/migration inventory documents functionality not yet covered by the replacement API. The Turso schema under `migrations/turso/` is only foundational and is not equivalent to the full PostgreSQL schema or the Convex application data model.
+The API runtime now uses the Turso adapter and is routed through Vercel Functions. This is still **not** a completed production cutover: the frontend remains Convex-dependent, the Turso schema only covers current API-facing functionality, and data migration plus full feature-parity/security verification remain outstanding.
 
 Therefore:
 - Do not switch production traffic or remove Convex/Neon credentials yet.
