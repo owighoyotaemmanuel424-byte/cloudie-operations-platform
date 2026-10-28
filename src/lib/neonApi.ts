@@ -241,7 +241,11 @@ export const neonApi = {
     return request<{ user: Record<string, unknown> }>(`/api/admin/users/${encodeURIComponent(id)}`, { method: "PATCH", body: JSON.stringify(input) });
   },
   async adminAdjustWallet(id: string, input: { amount_ngn: number; description: string; idempotency_key?: string }) {
-    return request<{ balance_after_ngn: string | number }>(`/api/admin/users/${encodeURIComponent(id)}/wallet-adjust`, { method: "POST", body: JSON.stringify(input) });
+    const idempotencyKey = input.idempotency_key || globalThis.crypto?.randomUUID?.() || `wallet-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    return request<{ balance_after_ngn: string | number; actual_delta_ngn?: number; idempotent?: boolean }>(`/api/admin/users/${encodeURIComponent(id)}/wallet-adjust`, {
+      method: "POST",
+      body: JSON.stringify({ ...input, idempotency_key: idempotencyKey }),
+    });
   },
   async adminShipments(limit = 50) {
     return request<{ shipments: Array<Record<string, unknown>> }>(`/api/admin/shipments?limit=${Math.min(100, Math.max(1, Math.floor(limit)))}`);
