@@ -394,15 +394,11 @@ export function ConvexProvider({ children }: { client?: unknown; children: React
 
 export function ConvexAuthProvider({ children }: { client?: unknown; children: React.ReactNode }) {
   const [user, setUser] = useState<NeonUser | null>(() => getCachedNeonUser());
-  const [isLoading, setIsLoading] = useState<boolean>(() => Boolean(getCachedNeonUser()));
+  const [isLoading, setIsLoading] = useState<boolean>(true);
 
   const refresh = useCallback(async () => {
-    const cached = getCachedNeonUser();
-    if (!cached) {
-      setUser(null);
-      setIsLoading(false);
-      return;
-    }
+    // The HttpOnly cookie is the source of truth. Always ask the same-origin API
+    // whether a session is active, even when the non-sensitive user cache is empty.
     try {
       const current = await neonApi.me();
       setUser(current);
