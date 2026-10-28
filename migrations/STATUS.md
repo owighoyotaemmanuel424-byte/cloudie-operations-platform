@@ -1,6 +1,10 @@
-# Neon Migration Status & Inventory
+# Legacy PostgreSQL/Neon Source Inventory & Turso Cutover
 
-## 1. SQL Migrations (`migrations/`)
+## 1. Legacy PostgreSQL/Neon source migrations (`migrations/`)
+
+The Neon migration status below is historical source-database evidence, not evidence that Turso has been provisioned or imported. Turso target migrations are maintained separately in `migrations/turso/` and must be applied to a new test database before the import script can run. Never point the migration runner at production until a private backup, schema coverage, and end-to-end parity checks are complete.
+
+## 2. SQL Migrations (`migrations/`)
 
 All migrations are ordered, transactional, and verified via SHA-256 checksums in `schema_migrations` using `api/scripts/migrate.mjs` (protected by a PostgreSQL session advisory lock).
 
@@ -37,7 +41,7 @@ cd api && node --import tsx scripts/e2e-live.ts
 
 ---
 
-## 2. Verified Neon API Routes (`api/src/server.ts`)
+## 3. Legacy API route inventory (`api/src/server.ts`)
 
 This is the complete, hand-verified route list as of 2026-10-19 (there are 65 registered handlers including redirects; the distinct paths are below). Financial-write endpoints (`POST /api/admin/users/:id/wallet-adjust` excepted as an admin-only tool) such as VTU purchase, payment verification, deposits, withdrawals, and transfers are intentionally absent until the financial-write gate in `docs/convex-to-neon-cutover-gates.md` is satisfied.
 
