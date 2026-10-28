@@ -1,11 +1,10 @@
-name: Neon API CI
+name: Turso API CI
 
 on:
   pull_request:
     paths:
       - "api/**"
       - "migrations/**"
-      - "render.yaml"
       - ".github/workflows/neon-api.yml"
   push:
     branches: [main, "fix/neon-migration-readiness"]
