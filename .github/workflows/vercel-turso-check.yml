@@ -38,3 +38,5 @@ jobs:
         run: node --check api/scripts/migrate-turso.mjs && node --check api/scripts/migrate-postgres-to-turso.mjs
       - name: Validate ordered Turso migration inventory
         run: npm run migrate:turso:dry-run
+      - name: Apply schema to an isolated local libSQL database
+        run: TURSO_DATABASE_URL=file:/tmp/cloudie-turso-ci.db npm run migrate:turso
