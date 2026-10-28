@@ -55,7 +55,7 @@ for (const migration of migrations) {
     migration.sql,
     `INSERT INTO _turso_migrations (version, filename, checksum) VALUES (${quote(migration.version)}, ${quote(migration.filename)}, ${quote(migration.checksum)});`,
     "COMMIT;",
-  ].join("\\n");
+  ].join("\n");
   try {
     // executeMultiple is required because each migration is a multi-statement SQL
     // file (including SQLite trigger bodies); execute/batch treats each item as one statement.
