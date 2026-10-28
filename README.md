@@ -1,8 +1,8 @@
-> **Deployment / migration status (verified from repository):** The Vercel backend now routes `/api/*` to a Hono function backed by Turso/libSQL. The frontend still imports Convex authentication/data hooks, and the current Turso schema/API do not yet provide complete feature parity or a verified data import. Do not delete Convex data or switch customer traffic until feature parity and staging tests pass. The free-hosting build artifact is produced by `.github/workflows/infinityfree-build.yml`; it does not automatically upload files to InfinityFree `htdocs`. See `migrations/STATUS.md` and `api/README.md` before changing production routing.
+> **Deployment / migration status (verified from repository):** The Vercel backend now routes `/api/*` to a Hono function backed by Turso/libSQL. Legacy Convex function references remain in source, but Vite routes the app's auth/query hooks through a compatibility adapter to the Turso API. Several legacy features still need real endpoint parity, and no data import has been run. Do not delete Convex data or switch customer traffic until feature parity and staging tests pass. The free-hosting build artifact is produced by `.github/workflows/infinityfree-build.yml`; it does not automatically upload files to InfinityFree `htdocs`. See `migrations/STATUS.md` and `api/README.md` before changing production routing.
 
 # Cloudie Operations Platform
 
-Production-ready multi-service operations platform powered by **React + Vite + TypeScript** on the frontend, **Hono + Node.js** in `api/`, and a prepared **Turso/libSQL** persistence layer. The Convex frontend runtime remains during the staged cutover; the API database adapter now targets Turso/libSQL. Legacy PostgreSQL migration files are retained as historical migration references.
+Multi-service operations platform powered by **React + Vite + TypeScript** on Vercel, **Hono** serverless API functions, and **Turso/libSQL**. Legacy Convex function files and PostgreSQL migrations are retained only as migration references until the remaining feature/data parity gates are verified.
 
 ---
 
@@ -10,7 +10,7 @@ Production-ready multi-service operations platform powered by **React + Vite + T
 
 | Layer | Technology / Hosting | Location |
 | --- | --- | --- |
-| **Frontend SPA** | React 19, Vite, TypeScript, Tailwind CSS (InfinityFree `htdocs`) | `src/`, `public/` |
+| **Frontend SPA** | React 19, Vite, TypeScript, Tailwind CSS (Vercel static output) | `src/`, `public/` |
 | **Backend API** | Node.js 20+, Hono, Zod, JWT + Session Cookies + CSRF | `api/src/server.ts` |
 | **Database** | Turso/libSQL migration layer; legacy PostgreSQL migrations retained for rollback/reference | `migrations/turso/`, `migrations/001_*.sql` |
 
@@ -26,9 +26,15 @@ npm run migrate:turso:dry-run
 
 # Apply Turso migrations
 TURSO_DATABASE_URL="libsql://your-database-your-org.turso.io" TURSO_AUTH_TOKEN="<token>" npm run migrate:turso
+
+# Plan a legacy PostgreSQL/Neon data import (read-only)
+SOURCE_DATABASE_URL="postgresql://<source-user>:<password>@<source-host>/<db>?sslmode=require" TURSO_DATABASE_URL="libsql://<database>-<org>.turso.io" TURSO_AUTH_TOKEN="<token>" npm run migrate:postgres-to-turso
+
+# Apply only after reviewing the plan; keep this backup outside the repository
+SOURCE_DATABASE_URL="postgresql://<source-user>:<password>@<source-host>/<db>?sslmode=require" TURSO_DATABASE_URL="libsql://<database>-<org>.turso.io" TURSO_AUTH_TOKEN="<token>" npm run migrate:postgres-to-turso:apply -- --backup=/secure/private/cloudie-postgres-export.json
 ```
 
-`migrations/turso/` currently contains the foundational auth/session, settings, and wallet tables. The full Convex schema and API parity migration is still required before switching production traffic; do not remove Convex or the PostgreSQL migration path yet.
+`migrations/turso/` now contains ordered SQLite-compatible migrations for auth/sessions, users/tenants, wallet ledger, shipments, documents, marketplace/orders, notifications, support, banking, KYC/storage, pricing, VTU/provider configuration, payments, audit logs, and background jobs. This schema has not yet been applied to a live Turso database or proven equivalent to all Convex-only behavior.
 
 ### Legacy PostgreSQL migrations
 
@@ -53,8 +59,8 @@ DATABASE_URL="postgresql://<user>:<password>@<neon-host>/<dbname>?sslmode=requir
 The API is exposed through [`api/[...path].ts`](./api/%5B...path%5D.ts) and the repository-root [`vercel.json`](./vercel.json). Deploy the repository root to Vercel; `/api/*` is handled by Hono.
 
 - **Build command:** `npm install && npm run build`
-- **Start command:** `npm run start`
-- **Health check endpoint:** `/healthz` (database readiness at `/readyz`)
+- **API route:** `/api/*` handled by the Vercel catch-all function
+- **Health check:** `/api/health` and `/api/turso-health`
 
 ### Required Vercel Environment Variables
 
@@ -65,7 +71,7 @@ The API is exposed through [`api/[...path].ts`](./api/%5B...path%5D.ts) and the 
 | `TURSO_AUTH_TOKEN` | Turso auth token, server-side only |
 | `VITE_API_BASE_URL` | Optional only for cross-origin API deployments; leave unset for same-origin Vercel routing |
 | `JWT_SECRET` | Random 32+ byte secret used to sign session tokens |
-| `CORS_ORIGINS` | `https://cloudie.wuaze.com,http://localhost:5173,http://localhost:3000` |
+| `CORS_ORIGINS` | Exact Vercel production/preview origins and local development origins; add any custom domain explicitly |
 
 ### Local API Verification
 
