@@ -235,8 +235,8 @@ const healthHandler = async (c: Context) => {
 
 app.get("/health", healthHandler);
 app.get("/ready", healthHandler);
-app.get("/api/health", (c) => c.redirect("/health", 307));
-app.get("/api/ready", (c) => c.redirect("/ready", 307));
+app.get("/api/health", healthHandler);
+app.get("/api/ready", healthHandler);
 
 app.get("/api/auth/csrf", (c) => {
   setCsrfCookie(c);
