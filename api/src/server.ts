@@ -35,7 +35,11 @@ const defaultOrigins = [
   ...(isProduction ? [] : ["http://localhost:3000", "http://127.0.0.1:3000", "http://localhost:5173"]),
 ];
 const envOrigins = (process.env.CORS_ORIGINS ?? "").split(",").map((x) => x.trim()).filter(Boolean);
-const configuredOrigins = new Set([...defaultOrigins, ...envOrigins]);
+const configuredOrigins = new Set([
+  ...defaultOrigins,
+  ...envOrigins,
+  ...(process.env.FRONTEND_URL ? [process.env.FRONTEND_URL.trim().replace(/\/$/, "")] : []),
+]);
 
 function isAllowedOrigin(origin: string | undefined): boolean {
   // Allow only exact, operator-configured origins. Do not trust shared-host suffixes:
