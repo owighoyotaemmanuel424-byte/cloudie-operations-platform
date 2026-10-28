@@ -49,11 +49,20 @@ for (const migration of migrations) {
     continue;
   }
   console.log(`[turso:migrate] Applying ${migration.filename}`);
-  await db.batch([
-    { sql: "BEGIN", args: [] },
-    { sql: migration.sql, args: [] },
-    { sql: "INSERT INTO _turso_migrations (version, filename, checksum) VALUES (?, ?, ?)", args: [migration.version, migration.filename, migration.checksum] },
-    { sql: "COMMIT", args: [] },
-  ], "write");
+  const quote = (value) => "'" + String(value).replace(/'/g, "''") + "'";
+  const script = [
+    "BEGIN IMMEDIATE;",
+    migration.sql,
+    `INSERT INTO _turso_migrations (version, filename, checksum) VALUES (${quote(migration.version)}, ${quote(migration.filename)}, ${quote(migration.checksum)});`,
+    "COMMIT;",
+  ].join("\\n");
+  try {
+    // executeMultiple is required because each migration is a multi-statement SQL
+    // file (including SQLite trigger bodies); execute/batch treats each item as one statement.
+    await db.executeMultiple(script);
+  } catch (error) {
+    await db.execute("ROLLBACK").catch(() => undefined);
+    throw error;
+  }
 }
 console.log("[turso:migrate] Complete");
