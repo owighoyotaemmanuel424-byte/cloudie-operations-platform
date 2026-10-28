@@ -9,7 +9,7 @@ CREATE TABLE IF NOT EXISTS tenant_sites (
   owner_user_id TEXT NOT NULL REFERENCES app_users(id) ON DELETE RESTRICT,
   site_name TEXT NOT NULL,
   display_name TEXT,
-  slug TEXT UNIQUE,
+  slug TEXT,
   subdomain TEXT NOT NULL UNIQUE,
   site_type TEXT NOT NULL CHECK (site_type IN ('bank','investment','logistics','ticketing','business','services')),
   currency TEXT DEFAULT 'NGN',
@@ -20,6 +20,7 @@ CREATE TABLE IF NOT EXISTS tenant_sites (
   updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 CREATE INDEX IF NOT EXISTS tenant_sites_owner_created_idx ON tenant_sites(owner_user_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS tenant_sites_slug_type_idx ON tenant_sites(slug, site_type);
 
 CREATE TABLE IF NOT EXISTS tenant_users (
   tenant_id TEXT NOT NULL REFERENCES tenant_sites(id) ON DELETE RESTRICT,
@@ -77,7 +78,7 @@ CREATE TABLE IF NOT EXISTS catalog_products (
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
-CREATE UNIQUE INDEX IF NOT EXISTS catalog_products_sku_unique_idx ON catalog_products(sku) WHERE sku IS NOT NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS catalog_products_tenant_sku_unique_idx ON catalog_products(tenant_id, sku) WHERE sku IS NOT NULL;
 CREATE INDEX IF NOT EXISTS catalog_products_active_category_idx ON catalog_products(is_active, category);
 CREATE INDEX IF NOT EXISTS catalog_products_tenant_updated_idx ON catalog_products(tenant_id, updated_at DESC);
 
@@ -143,7 +144,7 @@ CREATE INDEX IF NOT EXISTS banking_transactions_created_idx ON banking_transacti
 CREATE TABLE IF NOT EXISTS banking_ledger_groups (
   id TEXT PRIMARY KEY, tenant_id TEXT NOT NULL REFERENCES tenant_sites(id) ON DELETE RESTRICT,
   currency TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'draft' CHECK (status IN ('draft','posted','reversed')),
-  reference TEXT UNIQUE, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+  reference TEXT NOT NULL, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 CREATE TABLE IF NOT EXISTS banking_ledger_entries (
   id TEXT PRIMARY KEY, ledger_group_id TEXT NOT NULL REFERENCES banking_ledger_groups(id) ON DELETE RESTRICT,
