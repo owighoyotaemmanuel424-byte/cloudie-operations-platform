@@ -13,7 +13,6 @@
     "audit:convex-removal": "node scripts/audit-convex-removal.mjs",
     "format": "prettier --write .",
     "preview": "vite preview",
-    "build:freebuff": "npx convex deploy --cmd \"npm run build\" --cmd-url-env-var-name VITE_CONVEX_URL",
     "migrate": "node api/scripts/migrate.mjs",
     "migrate:dry-run": "node api/scripts/migrate.mjs --dry-run",
     "migrate:turso": "node api/scripts/migrate-turso.mjs",
