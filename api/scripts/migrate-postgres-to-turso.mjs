@@ -73,7 +73,12 @@ if (apply && !targetToken && !targetUrl.startsWith("file:")) {
   throw new Error("TURSO_AUTH_TOKEN is required for remote Turso imports.");
 }
 
-const source = new Pool({ connectionString: sourceUrl, max: 2, ssl: { rejectUnauthorized: true } });
+const sourceHost = new URL(sourceUrl).hostname;
+const source = new Pool({
+  connectionString: sourceUrl,
+  max: 2,
+  ssl: ["localhost", "127.0.0.1", "::1"].includes(sourceHost) ? false : { rejectUnauthorized: true },
+});
 const target = createClient({ url: targetUrl, authToken: targetToken || undefined });
 let inSourceSnapshot = false;
 
