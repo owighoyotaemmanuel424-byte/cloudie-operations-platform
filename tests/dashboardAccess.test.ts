@@ -138,7 +138,7 @@ describe("a signed-out visitor is returned to the dashboard after signing in", (
       "const returnTo = `${location.pathname}${location.search}`;",
     );
     expect(guard).toContain(
-      "to={`/auth?returnTo=${encodeURIComponent(returnTo)}`}",
+      "to={`/login?returnTo=${encodeURIComponent(returnTo)}`}",
     );
   });
 
