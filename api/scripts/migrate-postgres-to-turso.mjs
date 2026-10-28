@@ -171,21 +171,64 @@ try {
       const columnSql = common.map((column) => quoteIdentifier(column.name)).join(", ");
       const placeholders = common.map(() => "?").join(", ");
       const nonPk = common.filter((column) => !pk.includes(column.name));
-      const conflictSql = nonPk.length
-        ? `ON CONFLICT (${pk.map(quoteIdentifier).join(", ")}) DO UPDATE SET ${nonPk.map((column) => `${quoteIdentifier(column.name)}=excluded.${quoteIdentifier(column.name)}`).join(", ")}`
-        : `ON CONFLICT (${pk.map(quoteIdentifier).join(", ")}) DO NOTHING`;
+      const conflictSql = table === "banking_ledger_groups" || table === "banking_ledger_entries"
+        ? `ON CONFLICT (${pk.map(quoteIdentifier).join(", ")}) DO NOTHING`
+        : nonPk.length
+          ? `ON CONFLICT (${pk.map(quoteIdentifier).join(", ")}) DO UPDATE SET ${nonPk.map((column) => `${quoteIdentifier(column.name)}=excluded.${quoteIdentifier(column.name)}`).join(", ")}`
+          : `ON CONFLICT (${pk.map(quoteIdentifier).join(", ")}) DO NOTHING`;
       const sql = `INSERT INTO ${quoteTable(table)} (${columnSql}) VALUES (${placeholders}) ${conflictSql}`;
+      let tableRows = rows;
 
-      for (let offset = 0; offset < rows.length; offset += 100) {
-        const batch = rows.slice(offset, offset + 100).map((row) => ({
+      // Import ledger groups as drafts first, then their entries, and only post
+      // each group after Turso's balance/currency/tenant triggers validate it.
+      if (table === "banking_ledger_groups") {
+        tableRows = rows.map((row) => ({ ...row, status: "draft" }));
+      }
+
+      // BEFORE INSERT triggers can run even when an ON CONFLICT clause would
+      // ignore a duplicate. Avoid re-inserting already-imported entries beneath
+      // posted groups when safely resuming a previous migration run.
+      if (table === "banking_ledger_entries") {
+        const existingIds = new Set();
+        for (let offset = 0; offset < rows.length; offset += 100) {
+          const ids = rows.slice(offset, offset + 100).map((row) => row.id);
+          if (!ids.length) continue;
+          const placeholdersForIds = ids.map(() => "?").join(", ");
+          const found = await target.execute({
+            sql: `SELECT id FROM banking_ledger_entries WHERE id IN (${placeholdersForIds})`,
+            args: ids,
+          });
+          for (const row of found.rows) existingIds.add(String(row.id));
+        }
+        tableRows = rows.filter((row) => !existingIds.has(String(row.id)));
+      }
+
+      for (let offset = 0; offset < tableRows.length; offset += 100) {
+        const batch = tableRows.slice(offset, offset + 100).map((row) => ({
           sql,
           args: common.map((column) => safeValue(row[column.name], column.type)),
         }));
         await target.batch(batch, "write");
         imported += batch.length;
       }
-      console.log(`[import] ${table}: ${rows.length} row(s)`);
+      console.log(`[import] ${table}: ${tableRows.length} new/update row(s)`);
     }
+
+    // Finalize ledger statuses last. An unbalanced source group is left as draft
+    // and causes an explicit failure rather than being marked posted unsafely.
+    for (const row of backup.tables.banking_ledger_groups ?? []) {
+      const current = await target.execute({
+        sql: "SELECT status FROM banking_ledger_groups WHERE id=?",
+        args: [row.id],
+      });
+      const currentStatus = current.rows[0]?.status;
+      if (String(currentStatus ?? "") === String(row.status ?? "")) continue;
+      await target.execute({
+        sql: "UPDATE banking_ledger_groups SET status=? WHERE id=?",
+        args: [row.status, row.id],
+      });
+    }
+
     await source.query("COMMIT");
     inSourceSnapshot = false;
     console.log(`[import] Complete: ${imported} row(s) copied. Source rows were not modified or deleted.`);
