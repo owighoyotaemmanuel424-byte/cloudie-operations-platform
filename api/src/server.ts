@@ -4,6 +4,7 @@ import { cors } from "hono/cors";
 import { getCookie, setCookie, deleteCookie } from "hono/cookie";
 import { SignJWT, jwtVerify } from "jose";
 import { pool, type QueryResultRow } from "./db.js";
+export { pool };
 import { promisify } from "node:util";
 import { randomBytes, scrypt as scryptCallback, timingSafeEqual } from "node:crypto";
 import { z } from "zod";
