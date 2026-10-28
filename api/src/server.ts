@@ -1018,32 +1018,70 @@ app.post("/api/admin/users/:id/wallet-adjust", auth, adminOnly, async (c) => {
   const targetId = c.req.param("id");
   const raw = await c.req.json().catch(() => ({})) as Record<string, unknown>;
   const delta = Number(raw.amount_ngn ?? raw.amountNgn ?? raw.amount ?? 0);
-  const description = String(raw.description ?? raw.reason ?? "Admin wallet adjustment").trim();
+  const description = String(raw.description ?? raw.reason ?? "Admin wallet adjustment").trim().slice(0, 240);
+  const idempotencyKeyRaw = raw.idempotency_key ?? raw.idempotencyKey;
+  const idempotencyKey = typeof idempotencyKeyRaw === "string" ? idempotencyKeyRaw.trim() : "";
   if (!Number.isFinite(delta) || delta === 0) return fail(c, 400, "Non-zero amount required");
+  if (idempotencyKey.length > 160) return fail(c, 400, "Idempotency key is too long");
+
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
-    const updated = await client.query(
-      "UPDATE app_users SET wallet_balance_ngn = GREATEST(0, wallet_balance_ngn + $1), points_balance = GREATEST(0, points_balance + $1), updated_at=NOW() WHERE id=$2 RETURNING wallet_balance_ngn",
-      [delta, targetId],
-    );
-    if (!updated.rows[0]) {
+    if (idempotencyKey) {
+      const prior = await client.query(
+        "SELECT amount_ngn,description,balance_after_ngn,metadata FROM wallet_ledger WHERE idempotency_key=$1 AND user_id=$2",
+        [idempotencyKey, targetId],
+      );
+      if (prior.rows[0]) {
+        const priorMetadata = decodeStoredValue(prior.rows[0].metadata, {}) as Record<string, unknown>;
+        const sameRequest = Number(priorMetadata.requestedDelta) === delta && String(priorMetadata.description ?? prior.rows[0].description) === description;
+        await client.query("ROLLBACK");
+        if (!sameRequest) return fail(c, 409, "Idempotency key was already used for a different wallet adjustment");
+        return c.json({ balance_after_ngn: Number(prior.rows[0].balance_after_ngn), idempotent: true });
+      }
+    }
+
+    const before = await client.query("SELECT wallet_balance_ngn FROM app_users WHERE id=$1", [targetId]);
+    if (!before.rows[0]) {
       await client.query("ROLLBACK");
       return fail(c, 404, "User not found");
     }
+    const previousBalance = Number(before.rows[0].wallet_balance_ngn);
+    const updated = await client.query(
+      "UPDATE app_users SET wallet_balance_ngn = MAX(0, wallet_balance_ngn + $1), points_balance = MAX(0, points_balance + $1), updated_at=CURRENT_TIMESTAMP WHERE id=$2 RETURNING wallet_balance_ngn",
+      [delta, targetId],
+    );
     const balanceAfter = Number(updated.rows[0].wallet_balance_ngn);
+    const actualDelta = balanceAfter - previousBalance;
+    if (actualDelta === 0) {
+      await client.query("ROLLBACK");
+      return fail(c, 409, "The adjustment would not change the wallet balance");
+    }
+    const metadata = JSON.stringify({ requestedDelta: delta, description });
     await client.query(
-      "INSERT INTO wallet_ledger (user_id, amount_ngn, balance_after_ngn, description, transaction_type) VALUES ($1, $2, $3, $4, 'admin_adjust')",
-      [targetId, delta, balanceAfter, description],
+      "INSERT INTO wallet_ledger (user_id, amount_ngn, balance_after_ngn, description, transaction_type, idempotency_key, metadata) VALUES ($1, $2, $3, $4, 'admin_adjust', $5, $6)",
+      [targetId, actualDelta, balanceAfter, description, idempotencyKey || null, metadata],
     );
     await client.query("COMMIT");
-    await recordAuditLog(c.get("user").id, "wallet.adjust", "user", targetId, { delta, balanceAfter, description });
-    return c.json({ balance_after_ngn: balanceAfter });
+    await recordAuditLog(c.get("user").id, "wallet.adjust", "user", targetId, { delta, actualDelta, balanceAfter, description, idempotencyKey: idempotencyKey || undefined });
+    return c.json({ balance_after_ngn: balanceAfter, actual_delta_ngn: actualDelta });
   } catch {
     await client.query("ROLLBACK").catch(() => undefined);
+    if (idempotencyKey) {
+      const prior = await pool.query(
+        "SELECT balance_after_ngn,metadata,description FROM wallet_ledger WHERE idempotency_key=$1 AND user_id=$2",
+        [idempotencyKey, targetId],
+      ).catch(() => ({ rows: [] as QueryResultRow[] }));
+      if (prior.rows[0]) {
+        const priorMetadata = decodeStoredValue(prior.rows[0].metadata, {}) as Record<string, unknown>;
+        const sameRequest = Number(priorMetadata.requestedDelta) === delta && String(priorMetadata.description ?? prior.rows[0].description) === description;
+        if (sameRequest) return c.json({ balance_after_ngn: Number(prior.rows[0].balance_after_ngn), idempotent: true });
+        return fail(c, 409, "Idempotency key was already used for a different wallet adjustment");
+      }
+    }
     return fail(c, 500, "Failed to adjust wallet");
   } finally {
-    client.release();
+    await client.release();
   }
 });
 
