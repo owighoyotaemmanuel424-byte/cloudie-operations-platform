@@ -76,7 +76,7 @@ npm --prefix api test
 
 ---
 
-## 3. Frontend Build & InfinityFree Deployment (`https://cloudie.wuaze.com`)
+## 3. Legacy static deployment notes (InfinityFree; not the Vercel target)
 
 InfinityFree serves the compiled static SPA from `htdocs/` while all API requests go to Render (`VITE_NEON_API_URL`).
 
@@ -111,7 +111,7 @@ bun test
 npm --prefix api run typecheck
 npm --prefix api test
 
-# Live deployment smoke check against cloudie.wuaze.com & Render API
+# Legacy live smoke check against cloudie.wuaze.com and the former Render API
 npm run smoke:live
 ```
 
