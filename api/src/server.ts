@@ -834,6 +834,13 @@ app.post("/api/support/tickets", auth, async (c) => {
   const user = c.get("user");
   const id = uuid();
   const tenantId = parsed.data.tenant_id ?? parsed.data.tenantId ?? null;
+  if (tenantId && user.role !== "admin") {
+    const membership = await pool.query(
+      "SELECT t.id FROM tenant_sites t LEFT JOIN tenant_users tu ON tu.tenant_id=t.id AND tu.user_id=$2 WHERE t.id=$1 AND (t.owner_user_id=$2 OR tu.user_id=$2)",
+      [tenantId, user.id],
+    );
+    if (!membership.rows[0]) return fail(c, 403, "You are not a member of this tenant");
+  }
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
@@ -1009,7 +1016,8 @@ app.patch("/api/admin/users/:id", auth, adminOnly, async (c) => {
   if (updates.length === 0) return c.json({ ok: true });
   updates.push(`updated_at=NOW()`);
   values.push(targetId);
-  const result = await pool.query(`UPDATE app_users SET ${updates.join(", ")} WHERE id=$${idx} RETURNING id,name,email,role,wallet_balance_ngn,points_balance,is_suspended,is_terminated`, values);
+  const result = await pool.query(`UPDATE app_users SET ${updates.join(", ")} WHERE id=${idx} RETURNING id,name,email,role,wallet_balance_ngn,points_balance,is_suspended,is_terminated`, values);
+  if (!result.rows[0]) return fail(c, 404, "User not found");
   await recordAuditLog(c.get("user").id, "user.update", "user", targetId, parsed.data);
   return c.json({ user: result.rows[0] });
 });
