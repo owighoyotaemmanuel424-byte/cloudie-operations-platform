@@ -2,6 +2,7 @@
 -- SQLite-compatible schema; apply only after 001_foundation.sql.
 ALTER TABLE app_users ADD COLUMN organization_name TEXT;
 ALTER TABLE app_users ADD COLUMN password_changed_at TEXT;
+ALTER TABLE platform_settings ADD COLUMN updated_by TEXT REFERENCES app_users(id) ON DELETE SET NULL;
 
 CREATE TABLE IF NOT EXISTS tenant_sites (
   id TEXT PRIMARY KEY,
