@@ -16,6 +16,8 @@
     "migrate:dry-run": "node scripts/migrate.mjs --dry-run",
     "migrate:turso": "node scripts/migrate-turso.mjs",
     "migrate:turso:dry-run": "node scripts/migrate-turso.mjs --dry-run",
+    "migrate:postgres-to-turso": "node scripts/migrate-postgres-to-turso.mjs",
+    "migrate:postgres-to-turso:apply": "node scripts/migrate-postgres-to-turso.mjs --apply",
     "reconcile": "node scripts/reconcile-convex-migration.mjs"
   },
   "dependencies": {
