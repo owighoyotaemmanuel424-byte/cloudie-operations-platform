@@ -60,3 +60,22 @@ This is the complete, hand-verified route list as of 2026-10-19 (there are 65 re
 | Admin | `GET /api/admin/users`, `PATCH /api/admin/users/:id`, `POST /api/admin/users/:id/wallet-adjust`, `GET /api/admin/transactions`, `GET /api/admin/audit-logs`, `GET /api/admin/shipments`, `GET|POST /api/admin/settings`, `GET /api/admin/reports`, `POST /api/admin/catalog`, `PATCH /api/admin/catalog/:id`, `DELETE /api/admin/catalog/:id` |
 
 All authenticated routes require a session (Bearer token or `cloudie_session` cookie); admin routes additionally require `role = 'admin'`. Cookie-authenticated state-changing requests are protected by Origin validation and a double-submit CSRF token. See `docs/neon-migration-trace.md` for the remaining Convex functions (373 referenced, 37 modules with no API coverage) that still need endpoints before any cutover.
+
+
+---
+
+## 4. Turso/libSQL target migration sequence
+
+These are the SQLite-compatible target migrations. CI applies them to an isolated local libSQL database; this does **not** mean a production Turso database has been provisioned or populated.
+
+1. `migrations/turso/001_foundation.sql` — identity, cookie sessions, platform settings, wallet ledger.
+2. `002_api_parity.sql` — tenant sites, shipments, marketplace orders, notifications, audit logs, and ledger safeguards.
+3. `003_api_schema_gaps.sql` — profile, document, and notification fields required by the API.
+4. `004_support_tickets.sql` — support tickets and message history.
+5. `005_operations_schema.sql` — RBAC, pricing, VTU products/routes, payment records, crypto deposit requests, provider configurations, service orders, and jobs.
+6. `006_tenant_banking_and_storage.sql` — tenant accounts, beneficiaries, deposits, withdrawals, transfers, subscriptions, KYC, storage, and additional ledger fields.
+7. `007_legacy_data_fields.sql` — fields required to preserve legacy user, tenant, wallet, shipment, order, and notification records.
+
+Use `npm run migrate:turso:dry-run` to inspect migration order and checksums. Apply to a new test database with `TURSO_DATABASE_URL` and `TURSO_AUTH_TOKEN`, then run the guarded PostgreSQL-to-Turso importer from `api/README.md`. The importer refuses to proceed if any source table or column is absent in the target schema, creates a private backup before writes, never deletes source data, and posts imported ledger groups only after Turso validates their balance and tenant/currency invariants.
+
+**Production cutover remains gated** on a real source-to-target dry run, private backup, imported row-count reconciliation, auth/session checks, tenant isolation tests, support/shipment/catalog end-to-end checks, and adversarial ledger tests. Convex-only records or behavior not present in the PostgreSQL source still require separate migration work.
