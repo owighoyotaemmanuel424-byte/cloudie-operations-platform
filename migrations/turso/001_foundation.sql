@@ -6,7 +6,7 @@ CREATE TABLE IF NOT EXISTS app_users (
   password_hash TEXT,
   is_suspended INTEGER NOT NULL DEFAULT 0,
   is_terminated INTEGER NOT NULL DEFAULT 0,
-  wallet_balance_ngn INTEGER NOT NULL DEFAULT 0,
+  wallet_balance_ngn NUMERIC NOT NULL DEFAULT 0,
   points_balance INTEGER NOT NULL DEFAULT 0,
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
@@ -30,8 +30,8 @@ CREATE TABLE IF NOT EXISTS platform_settings (
 CREATE TABLE IF NOT EXISTS wallet_ledger (
   id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
   user_id TEXT NOT NULL REFERENCES app_users(id),
-  amount_ngn INTEGER NOT NULL,
-  balance_after_ngn INTEGER NOT NULL,
+  amount_ngn NUMERIC NOT NULL,
+  balance_after_ngn NUMERIC NOT NULL,
   description TEXT NOT NULL,
   transaction_type TEXT NOT NULL,
   reference TEXT,
