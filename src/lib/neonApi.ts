@@ -42,8 +42,11 @@ function readCsrfCookie() {
   return entry ? decodeURIComponent(entry.slice(prefix.length)) : null;
 }
 
+// The session token is deliberately never read from browser storage. Same-origin
+// requests authenticate with the server-issued HttpOnly cookie.
 export function getNeonToken() {
-  try { return window.sessionStorage.getItem(TOKEN_KEY); } catch { return null; }
+  try { window.sessionStorage.removeItem(TOKEN_KEY); } catch { /* storage may be blocked */ }
+  return null;
 }
 
 export function getCachedNeonUser(): NeonUser | null {
@@ -61,7 +64,7 @@ function notifyAuthChange(user: NeonUser | null) {
 
 function saveSession(session: NeonSession) {
   try {
-    if (session.token) window.sessionStorage.setItem(TOKEN_KEY, session.token);
+    window.sessionStorage.removeItem(TOKEN_KEY);
     window.sessionStorage.setItem(USER_KEY, JSON.stringify(session.user));
     notifyAuthChange(session.user);
   } catch {
