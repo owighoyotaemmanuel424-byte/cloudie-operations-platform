@@ -59,7 +59,7 @@ The apply command refuses to run without an explicit backup path. It creates the
 ## Migration safety and known remaining work
 
 - The frontend still imports Convex authentication and Convex data hooks. It has **not** completed the customer-facing cutover to this API.
-- `migrations/turso/001_foundation.sql` and `002_api_parity.sql` create the current API-facing schema and selected ledger safeguards. They are not yet a verified one-to-one port of every legacy PostgreSQL migration or every Convex table/function.
+- `migrations/turso/001` through `007` create the Turso target schema for identity, tenant, wallet, support, logistics, marketplace, banking, KYC/storage, provider configuration, payments, jobs, and audit data. The migration runner and local libSQL schema application are covered by CI, but no live Turso database or source-data import has been verified.
 - SQLite uses immediate triggers rather than PostgreSQL deferred constraint triggers; ledger invariant parity must be tested against adversarial cases before enabling banking/financial writes.
 - No live Turso migration, Convex data export/import, production Vercel deployment, or end-to-end customer workflow has been verified by this repository edit alone.
 - Do not delete the legacy Convex data or switch real customer traffic until frontend feature parity, authentication/session migration, provider workflows, tenant isolation, idempotency, ledger balancing, and staging verification are complete.
