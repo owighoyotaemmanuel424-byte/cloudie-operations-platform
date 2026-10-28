@@ -193,6 +193,12 @@ async function readJson<T>(c: Context, schema: z.ZodType<T>) {
   return parsed.success ? { data: parsed.data } : { error: parsed.error.flatten() };
 }
 
+function decodeStoredValue(value: unknown, fallback: unknown = null): unknown {
+  if (value === null || value === undefined) return fallback;
+  if (typeof value !== "string") return value;
+  try { return JSON.parse(value) as unknown; } catch { return value; }
+}
+
 const rateBuckets = new Map<string, { count: number; resetAt: number }>();
 function checkRateLimit(c: Context, prefix: string, maxRequests: number, windowMs = 60_000): boolean {
   if (process.env.NODE_ENV === "test" && c.req.header("x-test-rate-limit") !== "1") return true;
@@ -268,9 +274,9 @@ app.get("/api/public-config", async (c) => {
     const supportRow = await pool.query("SELECT value FROM platform_settings WHERE key='support_config'");
     const quickActionsRow = await pool.query("SELECT value FROM platform_settings WHERE key='mobile_quick_actions'");
     return c.json({
-      brand: brandRow.rows[0]?.value ?? defaultBrand,
-      support: supportRow.rows[0]?.value ?? defaultSupport,
-      quickActions: quickActionsRow.rows[0]?.value ?? [],
+      brand: decodeStoredValue(brandRow.rows[0]?.value, defaultBrand),
+      support: decodeStoredValue(supportRow.rows[0]?.value, defaultSupport),
+      quickActions: decodeStoredValue(quickActionsRow.rows[0]?.value, []),
       hasCustomBrand: Boolean(brandRow.rows[0]),
     });
   } catch {
@@ -1124,7 +1130,7 @@ app.delete("/api/admin/catalog/:id", auth, adminOnly, async (c) => {
 
 app.get("/api/admin/settings", auth, adminOnly, async (c) => {
   const result = await pool.query("SELECT key, value, updated_at FROM platform_settings ORDER BY key");
-  return c.json({ settings: result.rows });
+  return c.json({ settings: result.rows.map((row) => ({ ...row, value: decodeStoredValue(row.value, row.value) })) });
 });
 
 const updateSettingSchema = z.object({
