@@ -28,7 +28,7 @@ CREATE TABLE IF NOT EXISTS platform_settings (
 );
 
 CREATE TABLE IF NOT EXISTS wallet_ledger (
-  id TEXT PRIMARY KEY,
+  id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
   user_id TEXT NOT NULL REFERENCES app_users(id),
   amount_ngn INTEGER NOT NULL,
   balance_after_ngn INTEGER NOT NULL,
