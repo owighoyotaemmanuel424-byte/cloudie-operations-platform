@@ -1,10 +1,6 @@
-const DEFAULT_API_URL = "https://cloudie-operations-api-stage.onrender.com";
-const API_BASE_URL = (
-  (import.meta.env.VITE_NEON_API_URL as string | undefined) ||
-  (import.meta.env.VITE_API_URL as string | undefined) ||
-  DEFAULT_API_URL
-).replace(/\/$/, "");
-const SAME_ORIGIN_API = import.meta.env.VITE_NEON_API_SAME_ORIGIN === "true";
+// Same-origin Vercel Functions are the default. Configure VITE_API_BASE_URL
+// only when intentionally deploying the API on a separate trusted HTTPS origin.
+const API_BASE_URL = ((import.meta.env.VITE_API_BASE_URL as string | undefined) || "").replace(/\/$/, "");
 
 const TOKEN_KEY = "cloudie_api_token";
 const USER_KEY = "cloudie_api_user";
@@ -36,7 +32,6 @@ export class NeonApiError extends Error {
 }
 
 function baseUrl() {
-  if (SAME_ORIGIN_API) return "";
   return API_BASE_URL;
 }
 
