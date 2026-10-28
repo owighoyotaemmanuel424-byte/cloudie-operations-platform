@@ -14,6 +14,23 @@ Set these server-side environment variables in Vercel Preview and Production:
 
 Do not prefix database credentials or JWT secrets with `VITE_`. Deploy the repository root on Vercel; `vercel.json` builds the Vite frontend and Vercel routes `/api/*` to the catch-all function. `GET /api/turso-health` is a read-only connectivity probe.
 
+## One-time data migration from PostgreSQL/Neon
+
+The application runtime does not use PostgreSQL. The `pg` dependency remains only for the one-time import utility.
+
+1. Create the complete Turso schema with `npm run migrate:turso` against a **new, empty test database**.
+2. Set `SOURCE_DATABASE_URL` to the legacy PostgreSQL/Neon source, and `TURSO_DATABASE_URL` plus `TURSO_AUTH_TOKEN` to the Turso target.
+3. Run a read-only schema/count plan first:
+   ```bash
+   npm run migrate:postgres-to-turso
+   ```
+4. If the plan reports full column coverage and expected row counts, create a private local backup and run the resumable import:
+   ```bash
+   npm run migrate:postgres-to-turso:apply -- --backup=/secure/private/cloudie-postgres-export-2026-10-28.json
+   ```
+
+The apply command refuses to run without an explicit backup path. It creates the backup file with restrictive permissions, checks all shared source columns exist in Turso, imports parent tables before child tables, and never deletes source rows or clears target tables. Keep the backup outside the repository and never commit it. If a table/column is missing, the script fails closed; add and apply a reviewed Turso migration before retrying. It does not migrate Convex-only records or prove feature parity by itself.
+
 ## Local development
 
 1. Use Node.js 20+.
