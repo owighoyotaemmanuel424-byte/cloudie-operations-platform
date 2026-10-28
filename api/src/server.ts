@@ -228,7 +228,7 @@ const healthHandler = async (c: Context) => {
     const result = await pool.query("SELECT 1 AS ok");
     return c.json({ ok: result.rows[0]?.ok === 1, service: "cloudie-turso-api", database: "connected", timestamp: new Date().toISOString() });
   } catch {
-    return c.json({ ok: false, service: "cloudie-neon-api", database: "unavailable" }, 503);
+    return c.json({ ok: false, service: "cloudie-turso-api", database: "unavailable" }, 503);
   }
 };
 
