@@ -1022,6 +1022,7 @@ app.post("/api/admin/users/:id/wallet-adjust", auth, adminOnly, async (c) => {
   const idempotencyKeyRaw = raw.idempotency_key ?? raw.idempotencyKey;
   const idempotencyKey = typeof idempotencyKeyRaw === "string" ? idempotencyKeyRaw.trim() : "";
   if (!Number.isFinite(delta) || delta === 0) return fail(c, 400, "Non-zero amount required");
+  if (!idempotencyKey) return fail(c, 400, "Idempotency key required");
   if (idempotencyKey.length > 160) return fail(c, 400, "Idempotency key is too long");
 
   const client = await pool.connect();
