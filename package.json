@@ -16,7 +16,8 @@
     "migrate": "node api/scripts/migrate.mjs",
     "migrate:dry-run": "node api/scripts/migrate.mjs --dry-run",
     "migrate:turso": "node api/scripts/migrate-turso.mjs",
-    "migrate:turso:dry-run": "node api/scripts/migrate-turso.mjs --dry-run"
+    "migrate:turso:dry-run": "node api/scripts/migrate-turso.mjs --dry-run",
+    "audit:turso-runtime": "node scripts/check-turso-runtime.mjs"
   },
   "dependencies": {
     "@hono/node-server": "^1.19.5",
