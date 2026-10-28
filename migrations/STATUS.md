@@ -59,7 +59,7 @@ This is the complete, hand-verified route list as of 2026-10-19 (there are 65 re
 | Tenants | `GET /api/tenants`, `POST /api/tenants` |
 | Admin | `GET /api/admin/users`, `PATCH /api/admin/users/:id`, `POST /api/admin/users/:id/wallet-adjust`, `GET /api/admin/transactions`, `GET /api/admin/audit-logs`, `GET /api/admin/shipments`, `GET|POST /api/admin/settings`, `GET /api/admin/reports`, `POST /api/admin/catalog`, `PATCH /api/admin/catalog/:id`, `DELETE /api/admin/catalog/:id` |
 
-All authenticated routes require a session (Bearer token or `cloudie_session` cookie); admin routes additionally require `role = 'admin'`. Cookie-authenticated state-changing requests are protected by Origin validation and a double-submit CSRF token. See `docs/neon-migration-trace.md` for the remaining Convex functions (373 referenced, 37 modules with no API coverage) that still need endpoints before any cutover.
+All authenticated routes require a session (Bearer token or `cloudie_session` cookie); admin routes additionally require `role = 'admin'`. Cookie-authenticated state-changing requests are protected by Origin validation and a double-submit CSRF token. See the historical snapshot in `docs/neon-migration-trace.md` for remaining legacy function references (373 referenced, 37 modules with no API coverage) that still need endpoints before any cutover.
 
 
 ---
