@@ -1,21 +1,27 @@
 import { createClient } from "@libsql/client";
-import type { VercelRequest, VercelResponse } from "@vercel/node";
+import type { IncomingMessage, ServerResponse } from "node:http";
 
 /**
  * Read-only deployment probe. It intentionally does not run migrations or mutate data.
  * Keep this endpoint limited to connectivity; never return credentials or SQL errors.
  */
-export default async function handler(_req: VercelRequest, res: VercelResponse) {
+export default async function handler(req: IncomingMessage, res: ServerResponse) {
   res.setHeader("Cache-Control", "no-store");
-  if (_req.method !== "GET" && _req.method !== "HEAD") {
+  const respond = (status: number, body: Record<string, unknown>) => {
+    res.statusCode = status;
+    res.setHeader("Content-Type", "application/json; charset=utf-8");
+    res.end(JSON.stringify(body));
+  };
+
+  if (req.method !== "GET" && req.method !== "HEAD") {
     res.setHeader("Allow", "GET, HEAD");
-    return res.status(405).json({ ok: false, error: "Method not allowed" });
+    return respond(405, { ok: false, error: "Method not allowed" });
   }
 
   const url = process.env.TURSO_DATABASE_URL?.trim();
   const authToken = process.env.TURSO_AUTH_TOKEN?.trim();
   if (!url) {
-    return res.status(503).json({
+    return respond(503, {
       ok: false,
       database: "turso",
       error: "Database is not configured",
@@ -25,14 +31,14 @@ export default async function handler(_req: VercelRequest, res: VercelResponse) 
   const client = createClient({ url, authToken: authToken || undefined });
   try {
     await client.execute("SELECT 1 AS ok");
-    return res.status(200).json({
+    return respond(200, {
       ok: true,
       database: "turso",
       configured: true,
       timestamp: new Date().toISOString(),
     });
   } catch {
-    return res.status(503).json({
+    return respond(503, {
       ok: false,
       database: "turso",
       error: "Database connectivity check failed",
