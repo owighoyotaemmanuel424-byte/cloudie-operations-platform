@@ -1,4 +1,4 @@
-name: Deploy Cloudie Convex Backend + InfinityFree Build
+name: Deploy Cloudie Backend + Verify Vercel Build
 
 on:
   workflow_dispatch:
@@ -12,7 +12,7 @@ concurrency:
 
 jobs:
   deploy:
-    name: Deploy production Convex backend and build site
+    name: Deploy production Convex backend and verify the Vercel build
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
@@ -27,6 +27,9 @@ jobs:
       - name: Install locked dependencies
         run: npm install --legacy-peer-deps --no-audit --no-fund
 
+      - name: Install API dependencies from lockfile
+        run: npm --prefix api ci --no-audit --no-fund
+
       - name: Verify production deploy key is configured
         env:
           CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
@@ -36,45 +39,17 @@ jobs:
             exit 1
           fi
 
-      - name: Deploy Convex schema and functions, then build frontend with its generated URL
+      # Convex still serves most customer screens, so its functions ship here.
+      # The frontend and the Turso-backed API deploy from Vercel's Git
+      # integration; this job only proves that what Vercel will build is sound.
+      - name: Deploy Convex schema and functions, then build the frontend
         env:
           CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
+          VITE_NEON_API_SAME_ORIGIN: "true"
         run: npx convex deploy --cmd "npm run build" --cmd-url-env-var-name VITE_CONVEX_URL
 
-      - name: Verify SPA output and prepare InfinityFree package
-        shell: bash
-        run: |
-          set -euo pipefail
-          test -s dist/index.html
-          if [ ! -f dist/404.html ]; then
-            cat > dist/404.html <<'HTML'
-          <!doctype html>
-          <html lang="en">
-          <head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>Cloudie</title></head>
-          <body><p>Page not found. <a href="/">Return to Cloudie</a></p></body>
-          </html>
-          HTML
-          fi
-          if [ ! -f dist/.htaccess ]; then
-            cat > dist/.htaccess <<'HTACCESS'
-          Options -Indexes
-          DirectoryIndex index.html
-          RewriteEngine On
-          RewriteCond %{REQUEST_FILENAME} !-f
-          RewriteCond %{REQUEST_FILENAME} !-d
-          RewriteRule ^ index.html [L]
-          HTACCESS
-          fi
-          rm -f cloudie-infinityfree-site.zip
-          (cd dist && zip -qr ../cloudie-infinityfree-site.zip .)
-          unzip -Z1 cloudie-infinityfree-site.zip | grep -qx 'index.html'
-          unzip -Z1 cloudie-infinityfree-site.zip | grep -qx '.htaccess'
-          unzip -Z1 cloudie-infinityfree-site.zip | grep -qx '404.html'
+      - name: Verify the production build
+        run: npm run smoke:dist
 
-      - name: Upload deployable InfinityFree site
-        uses: actions/upload-artifact@v4
-        with:
-          name: cloudie-infinityfree-site
-          path: cloudie-infinityfree-site.zip
-          if-no-files-found: error
-          retention-days: 7
+      - name: Typecheck the Vercel function entrypoint
+        run: npx tsc -p api/tsconfig.json --pretty false

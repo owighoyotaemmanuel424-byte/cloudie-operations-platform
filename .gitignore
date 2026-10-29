@@ -13,3 +13,7 @@ api/dist
 # Private one-time database exports; never commit customer records or password hashes.
 /backups/
 /cloudie-postgres-export-*.json
+
+# Local libSQL/Turso development database; never a production artifact.
+.data/
+server/backups/

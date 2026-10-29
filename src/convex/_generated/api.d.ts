@@ -25,6 +25,8 @@ import type * as catalog from "../catalog.js";
 import type * as cloudieClassifier from "../cloudieClassifier.js";
 import type * as cloudieClassifierAction from "../cloudieClassifierAction.js";
 import type * as crons from "../crons.js";
+import type * as demoSeed from "../demoSeed.js";
+import type * as demoSeedInternal from "../demoSeedInternal.js";
 import type * as docTemplateAdmin from "../docTemplateAdmin.js";
 import type * as docTemplates from "../docTemplates.js";
 import type * as documents from "../documents.js";
@@ -119,6 +121,8 @@ declare const fullApi: ApiFromModules<{
   cloudieClassifier: typeof cloudieClassifier;
   cloudieClassifierAction: typeof cloudieClassifierAction;
   crons: typeof crons;
+  demoSeed: typeof demoSeed;
+  demoSeedInternal: typeof demoSeedInternal;
   docTemplateAdmin: typeof docTemplateAdmin;
   docTemplates: typeof docTemplates;
   documents: typeof documents;
