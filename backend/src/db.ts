@@ -58,9 +58,12 @@ class TursoConnection {
       sql: normalizeSql(sql),
       args: argsFor(values),
     });
+    // libSQL reports `rowsAffected: 0` for statements that return rows, so the
+    // Postgres-style `rowCount` the API expects (session lookups compare it to 1)
+    // must fall back to the row list instead of trusting the affected count.
     return {
       rows: result.rows as unknown as R[],
-      rowCount: result.rowsAffected ?? result.rows.length,
+      rowCount: result.rows.length > 0 ? result.rows.length : result.rowsAffected ?? 0,
     };
   }
 

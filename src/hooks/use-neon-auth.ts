@@ -8,14 +8,11 @@ import { getCachedNeonUser, getNeonToken, neonApi, type NeonUser } from "@/lib/n
  */
 export function useNeonAuth() {
   const [user, setUser] = useState<NeonUser | null>(() => getCachedNeonUser());
-  const [isLoading, setIsLoading] = useState(() => Boolean(getNeonToken()));
+  // Sessions live in an HttpOnly cookie, so there is no browser token to inspect:
+  // start in the loading state and let `/api/me` decide whether we are signed in.
+  const [isLoading, setIsLoading] = useState(true);
 
   const refresh = useCallback(async () => {
-    if (!getNeonToken()) {
-      setUser(null);
-      setIsLoading(false);
-      return null;
-    }
     setIsLoading(true);
     try {
       const current = await neonApi.me();
