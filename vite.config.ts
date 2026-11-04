@@ -3,11 +3,14 @@ import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
 import path from "path";
 import { defineConfig } from "vite";
+import { devApiPlugin } from "./scripts/dev-api-plugin";
 
 // https://vite.dev/config/
 export default defineConfig({
   base: "/",
-  plugins: [vlyPlugin(), react(), tailwindcss()],
+  // `devApiPlugin` mounts the Hono API at /api in `vite dev` only; deployed
+  // builds keep using the Vercel function.
+  plugins: [vlyPlugin(), react(), tailwindcss(), devApiPlugin()],
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "./src"),

@@ -31,14 +31,31 @@ const configuredOrigins = new Set([
   ...(process.env.FRONTEND_URL ? [process.env.FRONTEND_URL.trim().replace(/\/$/, "")] : []),
 ]);
 
-function isAllowedOrigin(origin: string | undefined): boolean {
-  // Allow only exact, operator-configured origins. Do not trust shared-host suffixes:
+function isAllowedOrigin(origin: string | undefined, c?: Context): boolean {
+  // Allow exact, operator-configured origins. Do not trust shared-host suffixes:
   // unrelated tenants can control subdomains on those platforms.
-  return Boolean(origin && configuredOrigins.has(origin));
+  if (!origin) return false;
+  if (configuredOrigins.has(origin)) return true;
+  // The Vite dev server mounts this app in-process (scripts/dev-api-plugin.ts)
+  // behind a sandbox proxy that rewrites Host, so the browser's origin can never
+  // be matched there. Only that dev server sets this flag.
+  if (process.env.CLOUDIE_DEV_TRUST_ORIGIN === "1") return true;
+  // Also allow the origin that matches the host which served this request. That
+  // is the same-origin case (aliases, custom domains) and needs no per-host
+  // configuration; a cross-site caller always sends its own origin, which cannot
+  // equal our host.
+  if (!c) return false;
+  const host = c.req.header("x-forwarded-host")?.split(",")[0]?.trim() || c.req.header("host");
+  if (!host) return false;
+  try {
+    return new URL(origin).host === host;
+  } catch {
+    return false;
+  }
 }
 
 app.use("*", cors({
-  origin: (origin) => isAllowedOrigin(origin) ? origin : "",
+  origin: (origin, c) => isAllowedOrigin(origin, c) ? origin : "",
   credentials: true,
   allowHeaders: ["Content-Type", "Authorization", "X-CSRF-Token"],
   allowMethods: ["GET", "POST", "PATCH", "PUT", "DELETE", "OPTIONS"],
@@ -52,9 +69,11 @@ app.use("*", async (c, next) => {
     const origin = c.req.header("origin");
     const hasCookie = Boolean(getCookie(c, "cloudie_session"));
     const usesBearer = c.req.header("authorization")?.startsWith("Bearer ") ?? false;
-    if ((origin && !isAllowedOrigin(origin)) || (hasCookie && !origin)) {
+    if (origin && !isAllowedOrigin(origin, c)) {
       return c.json({ error: "Cross-origin request rejected" }, 403);
     }
+    // A cookie-authenticated write must prove itself with the double-submit token
+    // whether or not the browser sent an Origin header.
     if (hasCookie && !usesBearer) {
       const cookieToken = getCookie(c, "cloudie_csrf");
       const headerToken = c.req.header("x-csrf-token");
@@ -185,6 +204,20 @@ async function setSession(c: Context, user: User) {
     maxAge: 8 * 60 * 60,
   });
   return token;
+}
+
+/**
+ * Was this insert rejected because the email is already registered?
+ *
+ * Postgres reports a unique violation as `23505`; libSQL/SQLite reports
+ * `SQLITE_CONSTRAINT_*` with a "UNIQUE constraint failed: app_users.email"
+ * message. Both mean "account exists", not "server error".
+ */
+function isDuplicateEmail(error: unknown): boolean {
+  if (typeof error !== "object" || error === null) return false;
+  const code = "code" in error ? String((error as { code?: unknown }).code ?? "") : "";
+  const message = error instanceof Error ? error.message : "";
+  return code === "23505" || code.startsWith("SQLITE_CONSTRAINT") || /UNIQUE constraint failed/i.test(message);
 }
 
 async function readJson<T>(c: Context, schema: z.ZodType<T>) {
@@ -328,7 +361,7 @@ app.post("/api/auth/register", async (c) => {
     return c.json({ user: { id: user.id, email: user.email, name: user.name, role: user.role }, token }, 201);
   } catch (error) {
     await client.query("ROLLBACK").catch(() => undefined);
-    if (typeof error === "object" && error !== null && "code" in error && error.code === "23505") return fail(c, 409, "An account with this email already exists");
+    if (isDuplicateEmail(error)) return fail(c, 409, "An account with this email already exists");
     console.error("Registration failed", error instanceof Error ? error.message : "unknown");
     return fail(c, 500, "Unable to create account");
   } finally {
@@ -1233,9 +1266,12 @@ app.onError((error: Error, c) => {
   return c.json({ error: "Internal server error" }, 500);
 });
 
-// Export the Hono app for isolated HTTP-level tests. Tests set NODE_ENV=test before
-// importing this module so they never bind a port or require a live database.
-const server = process.env.NODE_ENV === "test" || process.env.VERCEL ? undefined : serve({ fetch: app.fetch, port }, (info) => {
+// Export the Hono app for isolated HTTP-level tests and for the dev server,
+// which mounts this app on its own socket (scripts/dev-api-plugin.ts). Those
+// hosts set NODE_ENV=test, VERCEL, or CLOUDIE_EMBEDDED_API so the module never
+// binds a port of its own.
+const embedded = process.env.NODE_ENV === "test" || Boolean(process.env.VERCEL) || Boolean(process.env.CLOUDIE_EMBEDDED_API);
+const server = embedded ? undefined : serve({ fetch: app.fetch, port }, (info) => {
   console.log(`Cloudie Turso API listening on ${info.port}`);
 });
 
