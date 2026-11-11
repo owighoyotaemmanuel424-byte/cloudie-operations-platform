@@ -8,6 +8,7 @@ import {
   Mail,
   Menu,
   Moon,
+  Shield,
   Plane,
   Sun,
   Truck,
@@ -252,6 +253,22 @@ function SidebarContent({ current }: { current: Workspace }) {
             </NavLink>
           );
         })}
+        {user?.role === "admin" ? (
+          <NavLink
+            to="/app/admin"
+            className={({ isActive }) =>
+              cn(
+                "group flex items-center gap-2.5 rounded-xl px-3 py-2 text-[13px] transition-colors",
+                isActive
+                  ? "bg-primary/12 font-semibold text-primary"
+                  : "text-muted-foreground hover:bg-sidebar-accent hover:text-foreground",
+              )
+            }
+          >
+            <Shield className="h-4 w-4" />
+            Admin
+          </NavLink>
+        ) : null}
       </nav>
 
       <div className="space-y-1 border-t border-sidebar-border pt-3">

@@ -157,9 +157,13 @@ export type Campaign = {
   body: string;
   recipients: string[];
   pointsCharged: number;
-  status: "sent" | "queued";
+  status: "sent" | "queued" | "failed" | "partial";
   sentAt: number;
   opens: number;
+  deliveryState?: "queued" | "sending" | "sent" | "partial" | "failed" | "skipped";
+  sentCount?: number;
+  failedCount?: number;
+  deliveryError?: string | null;
 };
 
 export type SitePlan = "starter" | "growth" | "scale";

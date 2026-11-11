@@ -223,9 +223,13 @@ function toCampaign(row: Row): Campaign {
     body: String(row.body ?? ""),
     recipients: parseArray<string>(row.recipients),
     pointsCharged: num(row.points_charged),
-    status: row.status === "sent" ? "sent" : "queued",
+    status: (row.status === "sent" ? "sent" : row.status === "failed" ? "failed" : row.status === "partial" ? "partial" : "queued") as Campaign["status"],
     sentAt: ms(row.created_at ?? row.sentAt),
     opens: num(row.opens),
+    deliveryState: (row.delivery_state ?? row.deliveryState ?? row.status ?? "queued") as Campaign["deliveryState"],
+    sentCount: num(row.sent_count ?? row.sentCount),
+    failedCount: num(row.failed_count ?? row.failedCount),
+    deliveryError: row.last_error ?? row.deliveryError ?? null,
   };
 }
 
@@ -317,6 +321,20 @@ export const api = {
 
   async logout() {
     return request<{ ok: boolean }>("/api/auth/logout", { method: "POST", body: "{}" });
+  },
+
+  async requestPasswordReset(email: string) {
+    return request<{ ok: boolean; message?: string; devToken?: string }>("/api/auth/password-reset/request", {
+      method: "POST",
+      body: JSON.stringify({ email }),
+    });
+  },
+
+  async confirmPasswordReset(token: string, password: string) {
+    return request<{ ok: boolean }>("/api/auth/password-reset/confirm", {
+      method: "POST",
+      body: JSON.stringify({ token, password }),
+    });
   },
 
   async bootstrap() {
@@ -423,6 +441,30 @@ export const api = {
 
   async updateProfile(input: { name?: string; phone?: string }) {
     return request<{ ok: boolean }>("/api/platform/profile", { method: "PATCH", body: JSON.stringify(input) });
+  },
+
+  async listPendingDeposits() {
+    const body = await request<{ deposits: Row[] }>("/api/platform/admin/deposits?status=pending");
+    return body.deposits ?? [];
+  },
+
+  async settleDeposit(id: string) {
+    return request<{ ok: boolean }>(`/api/platform/admin/deposits/${encodeURIComponent(id)}/settle`, {
+      method: "POST",
+      body: "{}",
+    });
+  },
+
+  async refundLedgerGroup(input: { groupId: string; reason?: string }) {
+    return request<{ ok: boolean }>("/api/platform/admin/refund", {
+      method: "POST",
+      body: JSON.stringify({ groupId: input.groupId, reason: input.reason }),
+    });
+  },
+
+  async listAuditLogs(limit = 50) {
+    const body = await request<{ logs: Row[] }>(`/api/admin/audit-logs?limit=${Math.min(100, Math.max(1, Math.floor(limit)))}`);
+    return body.logs ?? [];
   },
 };
 

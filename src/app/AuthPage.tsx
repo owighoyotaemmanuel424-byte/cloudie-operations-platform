@@ -201,6 +201,14 @@ export default function AuthPage() {
               </div>
             ) : null}
 
+            {mode === "signin" ? (
+              <div className="flex justify-end">
+                <Link to="/auth/reset" className="text-[11px] text-muted-foreground hover:text-foreground">
+                  Forgot password?
+                </Link>
+              </div>
+            ) : null}
+
             {error ? (
               <p className="rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs text-destructive">
                 {error}

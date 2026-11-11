@@ -196,10 +196,13 @@ bootstrap (1,000 points, one ledger entry) and shipment creation over the real V
 
 - A top-up is recorded as a `pending` deposit and credited only when an operator settles it — there is no
   payment processor wired to these packs, so nothing is auto-credited or faked.
-- Campaigns are persisted as `queued`; no email transport is configured, so nothing claims they were sent.
-- Password reset issues hashed, expiring tokens; delivery requires `PASSWORD_RESET_WEBHOOK_URL` (the API
-  answers `503` in production when it is unset rather than pretending to send mail).
-- There is no dedicated password-reset or admin screen in the UI yet; those routes are API-only.
+- Campaigns are charged and then dispatched through the configured email transport (VLY gateway, SMTP,
+  or none). When no transport is configured the campaign is recorded as `skipped` instead of pretending
+  to send; the send log shows delivered/failed counts per campaign.
+- Password reset issues hashed, expiring tokens and delivers them through the configured transport
+  (VLY gateway, SMTP, webhook, or a dev token in non-production). The API answers `503` in production
+  when no transport is configured rather than pretending to send mail.
+- A dedicated password-reset screen lives at `/auth/reset` (request + confirm).
 - No production Turso credentials were available here, so no existing deployment or data was touched. The
   Vercel project was prepared but not deployed.
 

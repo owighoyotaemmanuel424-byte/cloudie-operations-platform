@@ -16,6 +16,7 @@
 import type { Hono, MiddlewareHandler } from "hono";
 import { randomBytes, randomUUID } from "node:crypto";
 import { z } from "zod";
+import { sendEmailBatch, emailConfigured } from "./email.js";
 
 export const PLATFORM_PRICING = {
   shipment: { base: 120, perKg: 8, multiplier: { express: 1.6, economy: 1, freight: 0.75 } },
@@ -441,6 +442,23 @@ export function registerPlatformRoutes(app: Hono<any>, deps: PlatformDeps): void
     return c.json({ ok: true });
   });
 
+  get("/api/platform/admin/deposits", auth, async (c: any) => {
+    const user = userOf(c);
+    if (user.role !== "admin") return fail(c, 403, "Administrator access required.");
+    const status = c.req.query("status")?.trim();
+    let sql = `SELECT d.*, u.email AS user_email, u.name AS user_name
+               FROM platform_deposits d
+               LEFT JOIN app_users u ON u.id = d.user_id`;
+    const params: unknown[] = [];
+    if (status) {
+      sql += " WHERE d.status = $1";
+      params.push(status);
+    }
+    sql += " ORDER BY d.created_at DESC LIMIT 100";
+    const result = await pool.query<Row>(sql, params);
+    return c.json({ deposits: result.rows });
+  });
+
   /* ── Shipments ─────────────────────────────────────────────────────────── */
 
   const createShipmentSchema = z.object({
@@ -733,8 +751,8 @@ export function registerPlatformRoutes(app: Hono<any>, deps: PlatformDeps): void
       });
       await client.query(
         `INSERT INTO platform_campaigns
-           (id, user_id, template, subject, body, recipients, points_charged, status)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,'queued')`,
+           (id, user_id, template, subject, body, recipients, points_charged, status, delivery_state, sent_count, failed_count)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,'queued','queued',0,0)`,
         [id, user.id, parsed.data.template, parsed.data.subject, parsed.data.body, JSON.stringify(recipients), cost],
       );
       await notify(user.id, "services", "Campaign queued", `${recipients.length} recipients · ${cost} pts deducted.`, client);
@@ -746,6 +764,48 @@ export function registerPlatformRoutes(app: Hono<any>, deps: PlatformDeps): void
     } finally {
       await client.release();
     }
+
+    // Attempt real delivery outside the charge transaction. Points are already
+    // deducted; a delivery failure never refunds automatically, but the state
+    // is recorded so the user can see what actually happened.
+    if (emailConfigured()) {
+      await pool.query("UPDATE platform_campaigns SET delivery_state='sending' WHERE id=$1", [id]);
+      const messages = recipients.map((recipient) => ({
+        to: recipient,
+        subject: parsed.data.subject,
+        text: parsed.data.body.replace(/\{\{name\}\}/g, recipient.split("@")[0]).replace(/\{\{code\}\}/g, "CLD-8F42QK"),
+        html: `<div style="font-family:sans-serif">${parsed.data.body
+          .replace(/\{\{name\}\}/g, recipient.split("@")[0])
+          .replace(/\{\{code\}\}/g, "CLD-8F42QK")
+          .replace(/\n/g, "<br/>")}</div>`,
+      }));
+      const result = await sendEmailBatch(messages);
+      const state =
+        result.failed === 0 ? "sent" : result.sent === 0 ? "failed" : "partial";
+      await pool.query(
+        "UPDATE platform_campaigns SET delivery_state=$1, sent_count=$2, failed_count=$3, delivered_at=CURRENT_TIMESTAMP, last_error=$4, status=$5 WHERE id=$6",
+        [
+          state,
+          result.sent,
+          result.failed,
+          result.errors.length ? result.errors[0].slice(0, 400) : null,
+          state === "sent" ? "sent" : "queued",
+          id,
+        ],
+      );
+      await notify(
+        user.id,
+        "services",
+        state === "sent" ? "Campaign sent" : state === "partial" ? "Campaign partially sent" : "Campaign delivery failed",
+        `${result.sent}/${recipients.length} delivered${result.failed ? `, ${result.failed} failed` : ""}.`,
+      );
+    } else {
+      await pool.query(
+        "UPDATE platform_campaigns SET delivery_state='skipped', last_error='No email transport configured' WHERE id=$1",
+        [id],
+      );
+    }
+
     const created = await pool.query<Row>("SELECT * FROM platform_campaigns WHERE id = $1", [id]);
     return c.json({ campaign: created.rows[0] }, 201);
   });

@@ -9,6 +9,7 @@ import { promisify } from "node:util";
 import { createHash, randomBytes, scrypt as scryptCallback, timingSafeEqual } from "node:crypto";
 import { z } from "zod";
 import { PLATFORM_PRICING, postPointsGroup, registerPlatformRoutes } from "./platform.js";
+import { sendEmail, emailConfigured } from "./email.js";
 
 const scrypt = promisify(scryptCallback);
 const port = Number(process.env.PORT ?? 8787);
@@ -509,16 +510,33 @@ app.post("/api/auth/password-reset/request", async (c) => {
     [uuid(), user.id, hashResetToken(token)],
   );
 
+  const frontendUrl = (process.env.FRONTEND_URL ?? "").trim().replace(/\/$/, "") || "http://localhost:3000";
+  const resetLink = `${frontendUrl}/auth/reset?token=${token}`;
+
   const webhook = process.env.PASSWORD_RESET_WEBHOOK_URL;
   if (webhook) {
     try {
       await fetch(webhook, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: user.email, token, expiresInMinutes: 60 }),
+        body: JSON.stringify({ email: user.email, token, resetLink, expiresInMinutes: 60 }),
       });
     } catch {
       console.error("Password reset delivery failed");
+      return fail(c, 503, "The reset email could not be delivered. Try again later.");
+    }
+    return c.json(generic);
+  }
+
+  if (emailConfigured()) {
+    const result = await sendEmail({
+      to: user.email,
+      subject: "Reset your Cloudie password",
+      html: `<p>Use the link below to reset your password. It expires in 60 minutes.</p><p><a href="${resetLink}">${resetLink}</a></p>`,
+      text: `Reset your Cloudie password: ${resetLink} (expires in 60 minutes)`,
+    });
+    if (!result.ok) {
+      console.error("Password reset delivery failed", result.error);
       return fail(c, 503, "The reset email could not be delivered. Try again later.");
     }
     return c.json(generic);

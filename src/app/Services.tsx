@@ -9,6 +9,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { usePlatform } from "@/platform/Provider";
+import { readDatabase } from "@/platform/store";
 import { PRICING, quoteCampaign, sendCampaign } from "@/platform/engine";
 import { dateTime, points } from "@/platform/format";
 import { EASE, Panel, Reveal, SectionLabel } from "@/platform/ui";
@@ -106,8 +107,16 @@ function Composer() {
 
   async function dispatch() {
     const result = await sendCampaign({ template: templateId, subject, body, recipients: list });
-    if (result.ok) toast.success("Campaign dispatched", { description: `${list.length} recipients · ${points(cost)} pts.` });
-    else toast.error(result.error);
+    if (result.ok) {
+      const latest = readDatabase().campaigns.filter((campaign) => campaign.userId === (user?.id ?? "")).sort((a, b) => b.sentAt - a.sentAt)[0];
+      const delivered = latest?.sentCount ?? 0;
+      const failed = latest?.failedCount ?? 0;
+      const state = latest?.deliveryState ?? "queued";
+      toast.success(
+        state === "sent" ? "Campaign sent" : state === "partial" ? "Campaign partially sent" : state === "failed" ? "Campaign delivery failed" : "Campaign queued",
+        { description: `${delivered}/${list.length} delivered${failed ? `, ${failed} failed` : ""} · ${points(cost)} pts.` },
+      );
+    } else toast.error(result.error);
   }
 
   return (
@@ -203,8 +212,23 @@ function SendLog({ campaigns }: { campaigns: import("@/platform/model").Campaign
                     </p>
                   </div>
                   <div className="text-right">
-                    <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[10px] text-primary">{campaign.status}</span>
-                    <p className="mt-1 font-mono text-[10px] text-muted-foreground">{points(campaign.pointsCharged)} pts</p>
+                    <span
+                      className={cn(
+                        "rounded-full px-2 py-0.5 text-[10px]",
+                        campaign.deliveryState === "sent"
+                          ? "bg-primary/10 text-primary"
+                          : campaign.deliveryState === "partial"
+                            ? "bg-[var(--brass)]/15 text-[var(--brass)]"
+                            : campaign.deliveryState === "failed"
+                              ? "bg-destructive/10 text-destructive"
+                              : "bg-muted text-muted-foreground",
+                      )}
+                    >
+                      {campaign.deliveryState ?? campaign.status}
+                    </span>
+                    <p className="mt-1 font-mono text-[10px] text-muted-foreground">
+                      {campaign.sentCount ?? 0}/{campaign.recipients.length} delivered · {points(campaign.pointsCharged)} pts
+                    </p>
                   </div>
                 </div>
                 <p className="mt-2 truncate text-[11px] text-muted-foreground">

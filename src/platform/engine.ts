@@ -138,6 +138,23 @@ export async function signUp(input: {
   }
 }
 
+export async function requestPasswordReset(email: string): Promise<{ devToken?: string }> {
+  try {
+    const result = await api.requestPasswordReset(email);
+    return { devToken: result.devToken };
+  } catch (error) {
+    throw authError(error);
+  }
+}
+
+export async function confirmPasswordReset(token: string, password: string): Promise<void> {
+  try {
+    await api.confirmPasswordReset(token, password);
+  } catch (error) {
+    throw authError(error);
+  }
+}
+
 export async function signOut(): Promise<void> {
   try {
     await api.logout();
@@ -352,6 +369,32 @@ export async function updateProfile(patch: { name?: string; phone?: string }): P
     await hydrate();
     return true as const;
   });
+}
+
+/* ── Admin console ───────────────────────────────────────────────────────── */
+
+export async function listPendingDeposits() {
+  return api.listPendingDeposits();
+}
+
+export async function settleDeposit(depositId: string): Promise<TransactionResult<true>> {
+  return run(async () => {
+    await api.settleDeposit(depositId);
+    await hydrate();
+    return true as const;
+  });
+}
+
+export async function refundLedgerGroup(input: { groupId: string; reason?: string }): Promise<TransactionResult<true>> {
+  return run(async () => {
+    await api.refundLedgerGroup(input);
+    await hydrate();
+    return true as const;
+  });
+}
+
+export async function listAuditLogs(limit = 50) {
+  return api.listAuditLogs(limit);
 }
 
 export type { LedgerType };

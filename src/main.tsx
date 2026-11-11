@@ -13,8 +13,10 @@ const ShipmentsPage = lazy(() => import("@/app/Shipments"));
 const TicketingPage = lazy(() => import("@/app/Ticketing"));
 const BusinessPage = lazy(() => import("@/app/Business"));
 const ServicesPage = lazy(() => import("@/app/Services"));
+const AdminPage = lazy(() => import("@/app/Admin"));
 const PublicTracking = lazy(() => import("@/app/PublicTracking"));
 const PublicDocument = lazy(() => import("@/app/PublicDocument"));
+const PasswordReset = lazy(() => import("@/app/PasswordReset"));
 
 function RouteFallback() {
   return (
@@ -34,6 +36,9 @@ createRoot(document.getElementById("root")!).render(
             <Route path="/auth" element={<AuthPage />} />
             <Route path="/login" element={<AuthPage />} />
             <Route path="/register" element={<AuthPage />} />
+            <Route path="/auth/reset" element={<PasswordReset />} />
+            <Route path="/reset-password" element={<PasswordReset />} />
+            <Route path="/forgot-password" element={<PasswordReset />} />
             <Route path="/track/:token" element={<PublicTracking />} />
             <Route path="/d/:token" element={<PublicDocument />} />
             <Route
@@ -50,6 +55,7 @@ createRoot(document.getElementById("root")!).render(
               <Route path="ticketing" element={<TicketingPage />} />
               <Route path="business" element={<BusinessPage />} />
               <Route path="services" element={<ServicesPage />} />
+              <Route path="admin" element={<AdminPage />} />
             </Route>
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
