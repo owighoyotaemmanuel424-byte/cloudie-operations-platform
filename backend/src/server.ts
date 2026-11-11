@@ -6,8 +6,9 @@ import { SignJWT, jwtVerify } from "jose";
 import { pool, type QueryResultRow } from "./db.js";
 export { pool };
 import { promisify } from "node:util";
-import { randomBytes, scrypt as scryptCallback, timingSafeEqual } from "node:crypto";
+import { createHash, randomBytes, scrypt as scryptCallback, timingSafeEqual } from "node:crypto";
 import { z } from "zod";
+import { PLATFORM_PRICING, postPointsGroup, registerPlatformRoutes } from "./platform.js";
 
 const scrypt = promisify(scryptCallback);
 const port = Number(process.env.PORT ?? 8787);
@@ -106,7 +107,7 @@ function setCsrfCookie(c: Context) {
   });
 }
 
-function fail(c: Context, status: 400 | 401 | 403 | 404 | 409 | 429 | 500, message: string) {
+function fail(c: Context, status: 400 | 401 | 403 | 404 | 409 | 429 | 500 | 503, message: string) {
   return c.json({ error: message }, status);
 }
 
@@ -171,6 +172,7 @@ const registerSchema = z.object({
   name: z.string().trim().min(1).max(100),
   email: z.string().email().max(254),
   password: z.string().min(8).max(128),
+  referralCode: z.string().trim().max(40).optional(),
 });
 const loginSchema = z.object({ email: z.string().email().max(254), password: z.string().min(1).max(128) });
 const uuid = () => randomBytes(16).toString("hex");
@@ -337,12 +339,53 @@ app.post("/api/auth/register", async (c) => {
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
+    const userId = uuid();
+    const referralCode = `CLD-${randomBytes(3).toString("hex").toUpperCase()}`;
     const inserted = await client.query<User & QueryResultRow>(
-      `INSERT INTO app_users (id,name,email,role,password_hash) VALUES ($1,$2,$3,'user',$4)
+      `INSERT INTO app_users (id,name,email,role,password_hash,referral_code) VALUES ($1,$2,$3,'user',$4,$5)
        RETURNING id,email,name,role,is_suspended,is_terminated`,
-      [uuid(), parsed.data.name, email, passwordHash],
+      [userId, parsed.data.name, email, passwordHash, referralCode],
     );
     const user = inserted.rows[0];
+
+    // Referral attribution is resolved server-side; the code is never trusted to
+    // grant a bonus to the caller's own account (self-referral is ignored).
+    const submittedCode = parsed.data.referralCode?.trim().toUpperCase();
+    let referrer: QueryResultRow | undefined;
+    if (submittedCode) {
+      const found = await client.query<QueryResultRow>(
+        "SELECT id, name, referral_code FROM app_users WHERE upper(referral_code) = $1",
+        [submittedCode],
+      );
+      referrer = found.rows[0];
+      if (referrer && referrer.id !== userId) {
+        await client.query("UPDATE app_users SET referred_by = $1 WHERE id = $2", [referrer.referral_code, userId]);
+      } else {
+        referrer = undefined;
+      }
+    }
+
+    // Welcome credit and referral bonus are ledger groups, not balance edits.
+    await postPointsGroup(client, {
+      userId,
+      workspace: "personal",
+      kind: "credit",
+      description: "Welcome credit",
+      amount: 1_000,
+      counterparty: "signup",
+    });
+    if (referrer) {
+      await postPointsGroup(client, {
+        userId: String(referrer.id),
+        workspace: "personal",
+        kind: "bonus",
+        description: `Referral bonus · ${parsed.data.name}`,
+        amount: PLATFORM_PRICING.referral,
+        reference: userId,
+        counterparty: "referrals",
+      });
+    }
+
     const sessionId = uuid();
     const token = await signToken(user, sessionId);
     await client.query(
@@ -358,7 +401,7 @@ app.post("/api/auth/register", async (c) => {
       maxAge: 8 * 60 * 60,
     });
     setCsrfCookie(c);
-    return c.json({ user: { id: user.id, email: user.email, name: user.name, role: user.role }, token }, 201);
+    return c.json({ user: { id: user.id, email: user.email, name: user.name, role: user.role, points: 1_000, referralCode }, token }, 201);
   } catch (error) {
     await client.query("ROLLBACK").catch(() => undefined);
     if (isDuplicateEmail(error)) return fail(c, 409, "An account with this email already exists");
@@ -376,8 +419,8 @@ app.post("/api/auth/login", async (c) => {
   const parsed = await readJson(c, loginSchema);
   if ("error" in parsed) return fail(c, 400, "Invalid login details");
   const email = parsed.data.email.trim().toLowerCase();
-  const result = await pool.query<User & QueryResultRow & { password_hash: string | null }>(
-    "SELECT id,email,name,role,is_suspended,is_terminated,password_hash FROM app_users WHERE lower(email)=lower($1)", [email],
+  const result = await pool.query<User & QueryResultRow & { password_hash: string | null; points_balance: number; referral_code: string | null }>(
+    "SELECT id,email,name,role,is_suspended,is_terminated,password_hash,points_balance,referral_code FROM app_users WHERE lower(email)=lower($1)", [email],
   );
   const user = result.rows[0];
   const dummyHash = "scrypt:" + "00".repeat(16) + ":" + "00".repeat(64);
@@ -387,7 +430,17 @@ app.post("/api/auth/login", async (c) => {
   }
   const token = await setSession(c, user);
   setCsrfCookie(c);
-  return c.json({ user: { id: user.id, email: user.email, name: user.name, role: user.role }, token });
+  return c.json({
+    user: {
+      id: user.id,
+      email: user.email,
+      name: user.name,
+      role: user.role,
+      points: Number(user.points_balance ?? 0),
+      referralCode: user.referral_code ?? null,
+    },
+    token,
+  });
 });
 
 app.post("/api/auth/logout", async (c) => {
@@ -405,9 +458,109 @@ app.post("/api/auth/logout", async (c) => {
   return c.json({ ok: true });
 });
 
-app.get("/api/me", auth, (c) => {
+app.get("/api/me", auth, async (c) => {
   const user = c.get("user");
-  return c.json({ user: { id: user.id, email: user.email, name: user.name, role: user.role } });
+  const profile = await pool.query(
+    "SELECT points_balance, referral_code, referred_by, phone FROM app_users WHERE id = $1",
+    [user.id],
+  );
+  const row = profile.rows[0] ?? {};
+  return c.json({
+    user: {
+      id: user.id,
+      email: user.email,
+      name: user.name,
+      role: user.role,
+      points: Number(row.points_balance ?? 0),
+      referralCode: row.referral_code ?? null,
+      referredBy: row.referred_by ?? null,
+      phone: row.phone ?? null,
+    },
+  });
+});
+
+/* ════════════════════════════════════════════════════════════════════
+   PASSWORD RESET
+   ════════════════════════════════════════════════════════════════════ */
+
+const resetRequestSchema = z.object({ email: z.string().email().max(254) });
+const resetConfirmSchema = z.object({ token: z.string().min(32).max(256), password: z.string().min(8).max(128) });
+
+function hashResetToken(token: string) {
+  return createHash("sha256").update(token).digest("hex");
+}
+
+app.post("/api/auth/password-reset/request", async (c) => {
+  if (!checkRateLimit(c, "auth:reset", 10, 60_000)) return fail(c, 429, "Too many reset attempts. Wait a minute.");
+  const parsed = await readJson(c, resetRequestSchema);
+  if ("error" in parsed) return fail(c, 400, "A valid email is required");
+  const email = parsed.data.email.trim().toLowerCase();
+
+  // Always answer identically so the endpoint cannot be used to enumerate accounts.
+  const generic = { ok: true, message: "If that account exists, a reset link has been issued." };
+  const found = await pool.query<QueryResultRow>("SELECT id, email FROM app_users WHERE lower(email) = $1", [email]);
+  const user = found.rows[0];
+  if (!user) return c.json(generic);
+
+  const token = randomBytes(32).toString("hex");
+  await pool.query(
+    `INSERT INTO password_reset_tokens (id, user_id, token_hash, expires_at)
+     VALUES ($1, $2, $3, datetime('now', '+1 hour'))`,
+    [uuid(), user.id, hashResetToken(token)],
+  );
+
+  const webhook = process.env.PASSWORD_RESET_WEBHOOK_URL;
+  if (webhook) {
+    try {
+      await fetch(webhook, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: user.email, token, expiresInMinutes: 60 }),
+      });
+    } catch {
+      console.error("Password reset delivery failed");
+      return fail(c, 503, "The reset email could not be delivered. Try again later.");
+    }
+    return c.json(generic);
+  }
+
+  // No transport configured: never pretend an email was sent.
+  if (process.env.NODE_ENV === "production") {
+    return fail(c, 503, "Password reset delivery is not configured on this deployment.");
+  }
+  return c.json({ ...generic, devToken: token });
+});
+
+app.post("/api/auth/password-reset/confirm", async (c) => {
+  if (!checkRateLimit(c, "auth:reset-confirm", 20, 60_000)) return fail(c, 429, "Too many attempts. Wait a minute.");
+  const parsed = await readJson(c, resetConfirmSchema);
+  if ("error" in parsed) return fail(c, 400, "A reset token and a password of at least 8 characters are required");
+  const tokenHash = hashResetToken(parsed.data.token);
+  const found = await pool.query<QueryResultRow>(
+    `SELECT id, user_id FROM password_reset_tokens
+      WHERE token_hash = $1 AND used_at IS NULL AND expires_at > CURRENT_TIMESTAMP`,
+    [tokenHash],
+  );
+  const record = found.rows[0];
+  if (!record) return fail(c, 400, "This reset link is invalid or has expired");
+  const passwordHash = await hashPassword(parsed.data.password);
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    await client.query(
+      "UPDATE app_users SET password_hash = $1, password_changed_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP WHERE id = $2",
+      [passwordHash, record.user_id],
+    );
+    await client.query("UPDATE password_reset_tokens SET used_at = CURRENT_TIMESTAMP WHERE id = $1", [record.id]);
+    await client.query("UPDATE api_sessions SET revoked_at = CURRENT_TIMESTAMP WHERE user_id = $1 AND revoked_at IS NULL", [record.user_id]);
+    await client.query("COMMIT");
+  } catch {
+    await client.query("ROLLBACK").catch(() => undefined);
+    return fail(c, 500, "Unable to reset the password");
+  } finally {
+    client.release();
+  }
+  return c.json({ ok: true });
 });
 
 /* ════════════════════════════════════════════════════════════════════
@@ -1259,6 +1412,10 @@ app.get("/api/admin/reports", auth, adminOnly, async (c) => {
 });
 
 app.get("/api/admin/analytics", auth, adminOnly, (c) => c.redirect("/api/admin/reports", 307));
+
+// Persistent backend for the rebuilt five-workspace UI. Shares this app's pool,
+// auth middleware, CSRF checks, rate limiter and audit trail.
+registerPlatformRoutes(app, { pool, auth, fail, uuid, checkRateLimit, recordAuditLog });
 
 app.notFound((c) => c.json({ error: "Not found" }, 404));
 app.onError((error: Error, c) => {

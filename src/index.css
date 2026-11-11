@@ -1,6 +1,7 @@
-@import url("https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap");
+@import url("https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400..800&family=Inter+Tight:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap");
 @import "tailwindcss";
 @import "tw-animate-css";
+
 @custom-variant dark (&:is(.dark *));
 
 @theme inline {
@@ -8,8 +9,9 @@
   --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);
   --radius-xl: calc(var(--radius) + 4px);
-  --font-sans: "DM Sans", sans-serif;
-  --font-display: "Space Grotesk", sans-serif;
+  --font-sans: "Inter Tight", ui-sans-serif, system-ui, sans-serif;
+  --font-display: "Bricolage Grotesque", "Inter Tight", sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, monospace;
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --color-card: var(--card);
@@ -17,8 +19,8 @@
   --color-popover: var(--popover);
   --color-popover-foreground: var(--popover-foreground);
   --color-primary: var(--primary);
-  --color-primary-foreground: var(--primary-foreground);
   --color-primary-hover: var(--primary-hover);
+  --color-primary-foreground: var(--primary-foreground);
   --color-secondary: var(--secondary);
   --color-secondary-foreground: var(--secondary-foreground);
   --color-muted: var(--muted);
@@ -49,23 +51,7 @@
   --color-warning: var(--warning);
   --color-error: var(--error);
   --color-info: var(--info);
-  /* VTU: the customer's airtime & bills surface, themed separately. */
-  --color-vtu-canvas: var(--vtu-canvas);
-  --color-vtu-card: var(--vtu-card);
-  --color-vtu-text: var(--vtu-text);
-  --color-vtu-muted: var(--vtu-muted);
-  --color-vtu-line: var(--vtu-line);
-  --color-vtu-chip: var(--vtu-chip);
-  --color-vtu-band: var(--vtu-band);
-  --color-vtu-band-fg: var(--vtu-band-fg);
-  --color-vtu-accent: var(--vtu-accent);
-  --color-vtu-accent-ink: var(--vtu-accent-ink);
-  --color-vtu-brand-mtn: var(--vtu-brand-mtn);
-  --color-vtu-brand-airtel: var(--vtu-brand-airtel);
-  --color-vtu-brand-glo: var(--vtu-brand-glo);
-  --color-vtu-brand-9mobile: var(--vtu-brand-9mobile);
 
-  /* Motion: one place to tune every transition in the product. */
   --ease-out-quint: cubic-bezier(0.22, 1, 0.36, 1);
   --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
   --duration-fast: 140ms;
@@ -73,112 +59,127 @@
   --duration-slow: 380ms;
 }
 
-/* ════════════════════════════════════════════════════════════════════
-   CLOUDIE DESIGN SYSTEM — the single source of truth for colour.
+/* ─────────────────────────────────────────────────────────────
+   Cloudie design system.
 
-   Pure-black enterprise surface, white ink, one emerald accent. Pages and
-   components read the semantic tokens only (`bg-background`, `bg-card`,
-   `text-muted-foreground`, `text-success`, `border-border`, …) — no page
-   declares its own palette, so one edit here restyles the whole platform.
+   A control-tower palette: warm paper and deep pine in light mode,
+   ink-black green and mint in dark mode, with one brass accent used
+   for value (points) and emphasis. Every colour is a semantic token;
+   no page declares its own palette.
+   ───────────────────────────────────────────────────────────── */
 
-   `.dark` is aliased to the same values on purpose: the product is
-   dark-only, and every `dark:` utility written before this system existed
-   must keep resolving to exactly what `:root` resolves to.
-   ════════════════════════════════════════════════════════════════════ */
-:root,
-.dark {
-  color-scheme: dark;
+:root {
+  color-scheme: light;
   --radius: 0.75rem;
 
-  /* Surfaces — black page, panels lifted in three deliberate steps. */
-  --background: #000000; /* primary background */
-  --surface: #080808; /* secondary background */
-  --sidebar: #0a0a0a; /* sidebar background */
-  --card: #111111; /* card background */
-  --surface-2: #181818; /* elevated surface */
-  --elevated: #181818;
-  --popover: #111111;
+  --background: #f5f2ea;
+  --surface: #efebe0;
+  --sidebar: #f0ece1;
+  --card: #fffdf8;
+  --surface-2: #eae4d7;
+  --elevated: #fffdf8;
+  --popover: #fffdf8;
 
-  /* Ink */
-  --foreground: #ffffff; /* primary text */
-  --muted-foreground: #a1a1aa; /* secondary text */
-  --card-foreground: #ffffff;
-  --popover-foreground: #ffffff;
+  --foreground: #16211c;
+  --muted-foreground: #66716a;
+  --card-foreground: #16211c;
+  --popover-foreground: #16211c;
 
-  /* Lines */
-  --border: #27272a; /* borders and dividers */
-  --input: #27272a;
+  --border: #ddd6c6;
+  --input: #d5cdbb;
 
-  /* Brand accent — emerald */
-  --primary: #10b981;
-  --primary-hover: #059669;
-  --primary-foreground: #04120c;
-  --ring: #10b981;
+  --primary: #10594a;
+  --primary-hover: #0b4438;
+  --primary-foreground: #f3fbf6;
+  --ring: #10594a;
 
-  /* Interaction fills. `accent` is the hover/selected surface, not a brand
-     colour — that is what `primary` is for. */
-  --accent: #181818;
-  --accent-foreground: #ffffff;
-  --secondary: #111111;
-  --secondary-foreground: #ffffff;
-  --muted: #181818;
+  --accent: #e8e2d3;
+  --accent-foreground: #16211c;
+  --secondary: #ece7da;
+  --secondary-foreground: #16211c;
+  --muted: #ece7da;
 
-  /* Status. These four carry meaning and must never be the only signal —
-     every status surface also prints a word (see `StatusBadge`). */
-  --success: #22c55e;
-  --warning: #f59e0b;
-  --error: #ef4444;
-  --info: #3b82f6;
-  --destructive: #ef4444;
+  --success: #1f7a4d;
+  --warning: #b06f14;
+  --error: #b03a2e;
+  --info: #2a628f;
+  --destructive: #b03a2e;
 
-  /* Sidebar */
-  --sidebar-foreground: #ffffff;
-  --sidebar-primary: #10b981;
-  --sidebar-primary-foreground: #04120c;
-  --sidebar-accent: #181818;
-  --sidebar-accent-foreground: #ffffff;
-  --sidebar-border: #27272a;
-  --sidebar-ring: #10b981;
+  --brass: #c08a3e;
+  --brass-soft: #f0dcc0;
 
-  /* Data visualisation */
-  --chart-1: #10b981;
-  --chart-2: #3b82f6;
-  --chart-3: #22c55e;
-  --chart-4: #a1a1aa;
-  --chart-5: #f59e0b;
+  --sidebar-foreground: #16211c;
+  --sidebar-primary: #10594a;
+  --sidebar-primary-foreground: #f3fbf6;
+  --sidebar-accent: #e7e1d2;
+  --sidebar-accent-foreground: #16211c;
+  --sidebar-border: #ddd6c6;
+  --sidebar-ring: #10594a;
 
-  /* Elevation on black reads through contrast, not grey haze. */
-  --shadow-color: 0 0% 0%;
-
-  /* VTU (airtime, data, bills) runs on the same system — a customer-facing
-     shop is not a licence for a second brand. */
-  --vtu-canvas: #000000;
-  --vtu-card: #111111;
-  --vtu-text: #ffffff;
-  --vtu-muted: #a1a1aa;
-  --vtu-line: #27272a;
-  --vtu-chip: #181818;
-  --vtu-band: #0a0a0a;
-  --vtu-band-fg: #ffffff;
-  --vtu-accent: #10b981;
-  --vtu-accent-ink: #04120c;
-  /* Network brands are content, not chrome — they stay recognisable. */
-  --vtu-brand-mtn: #e8c31c;
-  --vtu-brand-airtel: #d62828;
-  --vtu-brand-glo: #2f8b40;
-  --vtu-brand-9mobile: #10b981;
-
-  /* Aliases older surfaces still read. */
-  --nb-bg: var(--background);
-  --nb-surface: var(--card);
-  --nb-ink: var(--foreground);
-  --nb-rule: var(--border);
+  --chart-1: #10594a;
+  --chart-2: #c08a3e;
+  --chart-3: #2a628f;
+  --chart-4: #66716a;
+  --chart-5: #8a5a3b;
 }
 
+.dark {
+  color-scheme: dark;
+
+  --background: #08110e;
+  --surface: #0d1815;
+  --sidebar: #0b1512;
+  --card: #101d19;
+  --surface-2: #16241f;
+  --elevated: #14211d;
+  --popover: #101d19;
+
+  --foreground: #edf5ef;
+  --muted-foreground: #92a49b;
+  --card-foreground: #edf5ef;
+  --popover-foreground: #edf5ef;
+
+  --border: #22332c;
+  --input: #2a3d35;
+
+  --primary: #7ddcb8;
+  --primary-hover: #a3e9cc;
+  --primary-foreground: #052018;
+  --ring: #7ddcb8;
+
+  --accent: #17251f;
+  --accent-foreground: #edf5ef;
+  --secondary: #14211d;
+  --secondary-foreground: #edf5ef;
+  --muted: #17251f;
+
+  --success: #58d39a;
+  --warning: #e5b769;
+  --error: #f0786a;
+  --info: #7fb8e8;
+  --destructive: #f0786a;
+
+  --brass: #e5b769;
+  --brass-soft: #3a2d17;
+
+  --sidebar-foreground: #edf5ef;
+  --sidebar-primary: #7ddcb8;
+  --sidebar-primary-foreground: #052018;
+  --sidebar-accent: #17251f;
+  --sidebar-accent-foreground: #edf5ef;
+  --sidebar-border: #22332c;
+  --sidebar-ring: #7ddcb8;
+
+  --chart-1: #7ddcb8;
+  --chart-2: #e5b769;
+  --chart-3: #7fb8e8;
+  --chart-4: #92a49b;
+  --chart-5: #d59a72;
+}
 
 @layer base {
   * {
-    @apply border-border outline-ring/50;
+    @apply border-border;
   }
 
   html {
@@ -189,38 +190,12 @@
   body {
     @apply bg-background text-foreground;
     font-family: var(--font-sans);
-    font-feature-settings: "cv02", "cv03", "cv04", "ss01";
+    font-feature-settings: "ss01", "cv11";
     text-rendering: optimizeLegibility;
-    /* Theme swaps should feel deliberate, not instant. */
+    -webkit-font-smoothing: antialiased;
     transition:
-      background-color var(--duration-base) var(--ease-out-quint),
-      color var(--duration-base) var(--ease-out-quint);
-  }
-
-  select,
-  textarea,
-  input:not([type="checkbox"]):not([type="radio"]):not([type="color"]):not(
-      [type="file"]
-    ) {
-    min-height: 2.75rem;
-  }
-
-  /* A field sits slightly darker than the card it lives on, so it reads as an
-     inset control on both the black page and a lifted panel. */
-  select,
-  textarea,
-  input {
-    accent-color: var(--primary);
-  }
-
-  @media (min-width: 640px) {
-    select,
-    textarea,
-    input:not([type="checkbox"]):not([type="radio"]):not([type="color"]):not(
-        [type="file"]
-      ) {
-      min-height: 0;
-    }
+      background-color var(--duration-slow) var(--ease-out-quint),
+      color var(--duration-slow) var(--ease-out-quint);
   }
 
   h1,
@@ -228,1146 +203,107 @@
   h3,
   h4 {
     font-family: var(--font-display);
-    letter-spacing: -0.025em;
-    /* Headings balance across lines instead of leaving ragged orphans. */
-    text-wrap: balance;
-  }
-
-  p {
-    text-wrap: pretty;
-  }
-
-  button:not([disabled]),
-  [role="button"]:not([disabled]) {
-    cursor: pointer;
+    letter-spacing: -0.02em;
+    font-weight: 600;
   }
 
   ::selection {
-    background: color-mix(in srgb, var(--primary) 45%, transparent);
-    color: var(--foreground);
+    background: var(--primary);
+    color: var(--primary-foreground);
   }
 
-  /* A visible, consistent keyboard focus ring on anything focusable. */
   :focus-visible {
     outline: 2px solid var(--ring);
     outline-offset: 2px;
-    border-radius: var(--radius-sm);
   }
 
-  /* Slim themed scrollbars; Firefox and WebKit separately. */
-  * {
-    scrollbar-width: thin;
-    scrollbar-color: color-mix(in srgb, var(--foreground) 22%, transparent)
-      transparent;
-  }
-
-  ::-webkit-scrollbar {
-    width: 10px;
-    height: 10px;
-  }
-
-  ::-webkit-scrollbar-track {
-    background: transparent;
-  }
-
-  ::-webkit-scrollbar-thumb {
-    background-color: color-mix(in srgb, var(--foreground) 18%, transparent);
-    border-radius: 999px;
-    border: 3px solid transparent;
-    background-clip: content-box;
-  }
-
-  ::-webkit-scrollbar-thumb:hover {
-    background-color: color-mix(in srgb, var(--foreground) 32%, transparent);
-  }
-
-  /* Respect the OS "reduce motion" setting across every animation we ship. */
   @media (prefers-reduced-motion: reduce) {
     html {
       scroll-behavior: auto;
     }
-
     *,
     *::before,
     *::after {
       animation-duration: 0.01ms !important;
       animation-iteration-count: 1 !important;
       transition-duration: 0.01ms !important;
-      scroll-behavior: auto !important;
     }
   }
 }
 
-@layer components {
-  .landing-hero {
-    background-color: var(--card);
-    background-image:
-      radial-gradient(
-        circle at 14% 20%,
-        color-mix(in srgb, var(--primary) 12%, transparent),
-        transparent 28%
-      ),
-      radial-gradient(
-        circle at 88% 76%,
-        color-mix(in srgb, var(--accent) 15%, transparent),
-        transparent 24%
-      ),
-      linear-gradient(
-        135deg,
-        color-mix(in srgb, var(--background) 76%, var(--card)) 0%,
-        var(--card) 48%,
-        color-mix(in srgb, var(--secondary) 58%, var(--card)) 100%
-      );
-  }
-
-  .landing-grid {
-    background-image:
-      linear-gradient(
-        to right,
-        color-mix(in srgb, var(--border) 60%, transparent) 1px,
-        transparent 1px
-      ),
-      linear-gradient(
-        to bottom,
-        color-mix(in srgb, var(--border) 60%, transparent) 1px,
-        transparent 1px
-      );
-    background-size: 48px 48px;
-    mask-image: linear-gradient(to bottom, black 0%, transparent 82%);
-  }
-
-  .landing-rule {
-    background: linear-gradient(
-      90deg,
-      transparent,
-      var(--primary),
-      var(--accent),
-      transparent
-    );
-  }
-
-  .surface-lift {
-    box-shadow: 0 18px 48px -30px
-      color-mix(in srgb, var(--primary) 45%, transparent);
-  }
-
-  /* ── Elevation scale ──
-     Tinted with the theme's own shadow colour so surfaces sit on the
-     background instead of floating above a grey haze. */
-  .elev-1 {
-    box-shadow:
-      0 1px 2px hsl(var(--shadow-color) / 0.06),
-      0 1px 3px hsl(var(--shadow-color) / 0.04);
-  }
-
-  .elev-2 {
-    box-shadow:
-      0 2px 4px hsl(var(--shadow-color) / 0.05),
-      0 4px 12px hsl(var(--shadow-color) / 0.06);
-  }
-
-  .elev-3 {
-    box-shadow:
-      0 4px 8px hsl(var(--shadow-color) / 0.05),
-      0 12px 28px hsl(var(--shadow-color) / 0.09);
-  }
-
-  .elev-4 {
-    box-shadow:
-      0 8px 16px hsl(var(--shadow-color) / 0.06),
-      0 24px 48px hsl(var(--shadow-color) / 0.12);
-  }
-
-  /* Interactive surface: lifts and brightens on hover, settles on press. */
-  .interactive-card {
-    transition:
-      transform var(--duration-base) var(--ease-out-quint),
-      box-shadow var(--duration-base) var(--ease-out-quint),
-      border-color var(--duration-base) var(--ease-out-quint);
-  }
-
-  .interactive-card:hover {
-    transform: translateY(-2px);
-    box-shadow:
-      0 4px 8px hsl(var(--shadow-color) / 0.05),
-      0 16px 32px hsl(var(--shadow-color) / 0.1);
-    border-color: color-mix(in srgb, var(--primary) 32%, var(--border));
-  }
-
-  .interactive-card:active {
-    transform: translateY(0);
-    transition-duration: var(--duration-fast);
-  }
-
-  /* Hairline top highlight — the detail that makes dark surfaces read as glass. */
-  .sheen {
-    position: relative;
-    isolation: isolate;
-  }
-
-  .sheen::before {
-    content: "";
-    position: absolute;
-    inset: 0 0 auto 0;
-    height: 1px;
-    background: linear-gradient(
-      90deg,
-      transparent,
-      color-mix(in srgb, var(--foreground) 14%, transparent),
-      transparent
-    );
-    pointer-events: none;
-    z-index: 1;
-  }
-
-  /* Shared page gutter so every route aligns on the same rhythm. */
-  .page-gutter {
-    padding-inline: 0.75rem;
-  }
-
+@utility page-gutter {
+  padding-inline: 1rem;
   @media (min-width: 640px) {
-    .page-gutter {
-      padding-inline: 1.25rem;
-    }
+    padding-inline: 1.5rem;
   }
-
   @media (min-width: 1024px) {
-    .page-gutter {
-      padding-inline: 2rem;
-    }
-  }
-
-  /* Long unbroken strings (tracking numbers, slugs, IBANs) must never widen
-     a card on a phone. */
-  .break-anywhere {
-    overflow-wrap: anywhere;
-    word-break: break-word;
-  }
-
-  /* ── VTU PRIMITIVES ──
-     The three shapes the customer's shop repeats: a raised panel, a tappable
-     choice, and the ink band the balance sits on. Written once here because
-     they appear on four pages, and a chip that is yellow on airtime and teal
-     on bills is the same defect as two status colours for one status. */
-
-  /* The surface a section sits on. Softer and warmer than `Card`, which stays
-     tuned to the app's cool blue. */
-  .vtu-panel {
-    background-color: var(--vtu-card);
-    border: 1px solid var(--vtu-line);
-    border-radius: 1.25rem;
-    box-shadow:
-      0 1px 2px hsl(var(--shadow-color) / 0.04),
-      0 16px 34px -24px hsl(var(--shadow-color) / 0.34);
-    transition:
-      transform 180ms var(--ease-out-quint),
-      box-shadow 180ms var(--ease-out-quint),
-      border-color 180ms var(--ease-out-quint);
-  }
-
-  /* The ink band: the balance, and the screen you land on. Two faint blooms
-     keep it from reading as a flat rectangle at phone size. Decorative only,
-     and it never carries body copy. */
-  .vtu-band {
-    background-color: var(--vtu-band);
-    color: var(--vtu-band-fg);
-    background-image:
-      radial-gradient(
-        circle at 12% 0%,
-        color-mix(in srgb, var(--vtu-band-fg) 9%, transparent),
-        transparent 42%
-      ),
-      radial-gradient(
-        circle at 92% 100%,
-        color-mix(in srgb, var(--vtu-accent) 14%, transparent),
-        transparent 46%
-      );
-  }
-
-  /* A tappable choice — network, amount, plan, category.
-
-     Selection lives on `[aria-pressed="true"]` rather than a utility class so
-     the highlight cannot drift from what a screen reader is told: one
-     attribute, one state, both audiences. */
-  .vtu-chip {
-    background-color: var(--vtu-card);
-    border: 1px solid var(--vtu-line);
-    color: var(--vtu-text);
-    transition:
-      transform var(--duration-fast) var(--ease-out-quint),
-      background-color var(--duration-fast) var(--ease-out-quint),
-      border-color var(--duration-fast) var(--ease-out-quint),
-      box-shadow var(--duration-fast) var(--ease-out-quint);
-  }
-
-  .vtu-panel:has(button:active),
-  .vtu-panel:has(a:active) {
-    transform: scale(0.995);
-  }
-
-  .vtu-chip:hover {
-    border-color: color-mix(in srgb, var(--vtu-band) 30%, var(--vtu-line));
-  }
-
-  .vtu-chip:active {
-    transform: translateY(1px);
-  }
-
-  .vtu-chip[aria-pressed="true"] {
-    background-color: color-mix(
-      in srgb,
-      var(--vtu-accent) 26%,
-      var(--vtu-card)
-    );
-    border-color: var(--vtu-accent);
-    box-shadow: 0 0 0 2px color-mix(in srgb, var(--vtu-accent) 45%, transparent);
-  }
-
-  @media (max-width: 639px) {
-    .vtu-panel {
-      border-radius: 1.15rem;
-    }
-    .vtu-receipt-row {
-      padding-block: 0.5rem;
-    }
-  }
-
-  /* Rows in a receipt or a confirmation: label left, value right, hairline
-     between. Used instead of a `<table>` because it wraps on a phone. */
-  .vtu-receipt-row {
-    display: flex;
-    align-items: baseline;
-    justify-content: space-between;
-    gap: 1rem;
-    padding-block: 0.6rem;
-    border-top: 1px solid var(--vtu-line);
-  }
-
-  .vtu-receipt-row:first-child {
-    border-top: 0;
+    padding-inline: 2.5rem;
   }
 }
 
-/* ─────────────────────────────────────────────────────────────
-   PRODUCT-WIDE UI POLISH
-   Shared primitives below keep every route visually related without
-   requiring each page to carry its own one-off styling.
-   ───────────────────────────────────────────────────────────── */
-
-@layer components {
-  .page-title {
-    font-family: var(--font-display);
-    font-size: clamp(1.45rem, 2vw, 2rem);
-    line-height: 1.1;
-    font-weight: 700;
-    letter-spacing: -0.035em;
-  }
-
-  .page-subtitle {
-    margin-top: 0.4rem;
-    color: var(--muted-foreground);
-    font-size: 0.875rem;
-    line-height: 1.5;
-  }
-
-  .glass-surface {
-    background: color-mix(in srgb, var(--card) 86%, transparent);
-    border: 1px solid color-mix(in srgb, var(--border) 72%, transparent);
-    box-shadow: 0 18px 50px -38px hsl(var(--shadow-color) / 0.5);
-    backdrop-filter: blur(18px);
-  }
-
-  .section-label {
-    color: var(--muted-foreground);
-    font-size: 0.68rem;
-    line-height: 1;
-    font-weight: 700;
-    letter-spacing: 0.12em;
-    text-transform: uppercase;
-  }
-
-  .data-row {
-    display: flex;
-    align-items: center;
-    gap: 0.75rem;
-    min-height: 3.25rem;
-    border-radius: 0.85rem;
-    padding: 0.55rem 0.75rem;
-    transition: background-color var(--duration-fast) var(--ease-out-quint);
-  }
-
-  .data-row:hover {
-    background: color-mix(in srgb, var(--muted) 62%, transparent);
-  }
-
-  .status-dot {
-    width: 0.45rem;
-    height: 0.45rem;
-    flex: 0 0 auto;
-    border-radius: 999px;
-    background: var(--primary);
-    box-shadow: 0 0 0 4px color-mix(in srgb, var(--primary) 10%, transparent);
-  }
-
-  .page-divider {
-    height: 1px;
-    width: 100%;
-    background: linear-gradient(90deg, transparent, var(--border), transparent);
-  }
-
-  /* Give native controls the same visual language as the shadcn inputs. */
-  select,
-  textarea {
-    border-color: var(--input);
-    border-radius: 0.75rem;
-    /* A field is one step DARKER than the card it sits on, so it reads as an
-       inset control instead of dissolving into the panel. */
-    background-color: var(--surface);
-    color: var(--foreground);
-    transition:
-      border-color var(--duration-fast) var(--ease-out-quint),
-      box-shadow var(--duration-fast) var(--ease-out-quint);
-  }
-
-  select:focus,
-  textarea:focus {
-    border-color: var(--ring);
-    outline: none;
-    box-shadow: 0 0 0 3px color-mix(in srgb, var(--ring) 15%, transparent);
-  }
-
-  /* Consistent mobile rhythm across long pages. */
-  @media (max-width: 639px) {
-    [data-slot="card"] {
-      border-radius: 1rem;
-    }
-
-    [data-slot="card-header"] {
-      padding-inline: 1rem;
-    }
-
-    [data-slot="card-content"] {
-      padding-inline: 1rem;
-    }
-  }
+@utility panel {
+  border-radius: 1rem;
+  border: 1px solid var(--border);
+  background-color: var(--card);
 }
 
-/* Native controls follow the same palette as the shadcn inputs, so a plain
-   `<select>` inside an older form does not fall out of the theme. */
-option {
-  background: var(--card);
-  color: var(--foreground);
-}
-* {
-  scrollbar-color: var(--input) var(--background);
+@utility hairline {
+  background-image: repeating-linear-gradient(
+    90deg,
+    var(--border) 0,
+    var(--border) 4px,
+    transparent 4px,
+    transparent 8px
+  );
 }
 
-/* ================================================================
-   CLOUDIE MOBILE APP UI + MOTION SYSTEM
-   ================================================================ */
-@media (max-width: 1023px) {
+/* The faint cartographic grid that sits under marketing surfaces. */
+@utility grid-field {
+  background-image:
+    linear-gradient(to right, color-mix(in oklab, var(--border) 55%, transparent) 1px, transparent 1px),
+    linear-gradient(to bottom, color-mix(in oklab, var(--border) 55%, transparent) 1px, transparent 1px);
+  background-size: 56px 56px;
+  mask-image: radial-gradient(ellipse 90% 70% at 50% 0%, #000 30%, transparent 78%);
+}
+
+@utility brass-text {
+  color: var(--brass);
+}
+
+/* Print layout for generated travel documents and invoices. */
+@media print {
+  .no-print {
+    display: none !important;
+  }
+  .print-sheet {
+    box-shadow: none !important;
+    border: none !important;
+    margin: 0 !important;
+    width: 100% !important;
+  }
   body {
-    overflow-x: hidden;
-    -webkit-tap-highlight-color: transparent;
-  }
-  main {
-    scroll-padding-top: 1rem;
-    scroll-padding-bottom: calc(6rem + env(safe-area-inset-bottom));
-  }
-  [data-slot="card"] {
-    box-shadow: 0 8px 28px -20px hsl(var(--shadow-color) / 0.8);
-    border-color: color-mix(in srgb, var(--border) 82%, transparent);
-  }
-  button,
-  a,
-  [role="button"] {
-    -webkit-touch-callout: none;
-  }
-  /* NOTE: `.page-gutter` deliberately has ONE definition (above, outside this
-     media query). `VtuShell` cancels it with fixed negative margins to go
-     full-bleed, so re-declaring the gutter here at a different value would push
-     the VTU shop past the viewport edge on that breakpoint only. */
-}
-@media (max-width: 639px) {
-  [data-slot="card"] {
-    border-radius: 1.1rem;
-  }
-  [data-slot="card-header"] {
-    padding-top: 0.9rem;
-    padding-bottom: 0.75rem;
-  }
-  [data-slot="card-content"] {
-    padding-top: 0.85rem;
-    padding-bottom: 0.9rem;
-  }
-  .mobile-app-section {
-    margin-top: 0.75rem;
-  }
-  .mobile-app-card {
-    border-radius: 1.15rem;
-    background: linear-gradient(
-      145deg,
-      color-mix(in srgb, var(--card) 96%, var(--primary)),
-      var(--card)
-    );
-    border: 1px solid var(--border);
-    box-shadow: 0 14px 35px -26px hsl(var(--shadow-color) / 0.9);
-    transition:
-      transform 180ms var(--ease-out-quint),
-      box-shadow 180ms var(--ease-out-quint),
-      border-color 180ms var(--ease-out-quint);
-  }
-  .mobile-app-card:active {
-    transform: scale(0.985);
-    box-shadow: 0 7px 20px -18px hsl(var(--shadow-color) / 0.9);
-  }
-  .mobile-sticky-action {
-    position: sticky;
-    bottom: calc(0.5rem + env(safe-area-inset-bottom));
-    z-index: 30;
-    margin-inline: -0.125rem;
-    padding: 0.5rem;
-    border: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
-    background: color-mix(in srgb, var(--background) 82%, transparent);
-    backdrop-filter: blur(18px);
-    border-radius: 1rem;
-    box-shadow: 0 16px 40px -20px hsl(var(--shadow-color) / 0.8);
+    background: #fff !important;
+    color: #000 !important;
   }
 }
-@keyframes cloudie-page-in {
+
+@keyframes marquee {
   from {
-    opacity: 0;
-    transform: translateY(8px);
+    transform: translateX(0);
   }
   to {
-    opacity: 1;
-    transform: translateY(0);
+    transform: translateX(-50%);
   }
 }
-@keyframes cloudie-fade-up {
-  from {
-    opacity: 0;
-    transform: translateY(12px);
+
+@keyframes pulse-ring {
+  0% {
+    box-shadow: 0 0 0 0 color-mix(in oklab, var(--primary) 45%, transparent);
   }
-  to {
-    opacity: 1;
-    transform: translateY(0);
+  70% {
+    box-shadow: 0 0 0 10px transparent;
   }
-}
-@keyframes cloudie-pulse {
-  0%,
   100% {
-    opacity: 1;
-  }
-  50% {
-    opacity: 0.72;
-  }
-}
-.page-motion {
-  animation: cloudie-page-in 260ms var(--ease-out-quint) both;
-}
-.stagger-children > * {
-  animation: cloudie-fade-up 360ms var(--ease-out-quint) both;
-}
-.stagger-children > *:nth-child(1) {
-  animation-delay: 30ms;
-}
-.stagger-children > *:nth-child(2) {
-  animation-delay: 60ms;
-}
-.stagger-children > *:nth-child(3) {
-  animation-delay: 90ms;
-}
-.stagger-children > *:nth-child(4) {
-  animation-delay: 120ms;
-}
-.stagger-children > *:nth-child(5) {
-  animation-delay: 150ms;
-}
-.stagger-children > *:nth-child(6) {
-  animation-delay: 180ms;
-}
-.skeleton-pulse {
-  animation: cloudie-pulse 1.4s ease-in-out infinite;
-}
-@media (prefers-reduced-motion: reduce) {
-  .page-motion,
-  .stagger-children > * {
-    animation: none !important;
-  }
-}
-
-/* ================================================================
-   CLOUDIE MOBILE-FIRST PAGE SYSTEM
-   One layout boundary makes every existing route responsive while
-   preserving desktop composition and business logic.
-   ================================================================ */
-.cloudie-page {
-  min-width: 0;
-  overflow-x: clip;
-}
-.cloudie-page img,
-.cloudie-page svg {
-  max-width: 100%;
-}
-.cloudie-page pre,
-.cloudie-page code {
-  overflow-wrap: anywhere;
-}
-@media (max-width: 1023px) {
-  .cloudie-page {
-    width: 100%;
-  }
-  .cloudie-page h1,
-  .cloudie-page .page-title {
-    font-size: clamp(1.35rem, 6vw, 1.8rem);
-    line-height: 1.12;
-  }
-  .cloudie-page h2 {
-    font-size: clamp(1.1rem, 5vw, 1.4rem);
-  }
-  .cloudie-page .grid,
-  .cloudie-page form {
-    min-width: 0;
-  }
-  .cloudie-page .grid > * {
-    min-width: 0;
-  }
-  .cloudie-page form [class*="grid-cols-"] {
-    grid-template-columns: minmax(0, 1fr) !important;
-  }
-  .cloudie-page [class*="overflow-x-auto"] {
-    max-width: 100%;
-    -webkit-overflow-scrolling: touch;
-    scrollbar-width: none;
-  }
-  .cloudie-page [class*="overflow-x-auto"]::-webkit-scrollbar {
-    display: none;
-  }
-  .cloudie-page [data-slot="card"] {
-    min-width: 0;
-    overflow: hidden;
-  }
-  .cloudie-page input,
-  .cloudie-page textarea,
-  .cloudie-page select {
-    max-width: 100%;
-    font-size: 16px;
-  }
-  .cloudie-page button {
-    touch-action: manipulation;
-  }
-}
-@media (max-width: 639px) {
-  .cloudie-page {
-    padding-bottom: calc(1.25rem + env(safe-area-inset-bottom));
-  }
-  .cloudie-page > .space-y-8 > * + * {
-    margin-top: 1rem;
-  }
-  .cloudie-page > .space-y-6 > * + * {
-    margin-top: 0.875rem;
-  }
-  .cloudie-page > .space-y-4 > * + * {
-    margin-top: 0.75rem;
-  }
-  .cloudie-page [class*="gap-8"] {
-    gap: 1rem;
-  }
-  .cloudie-page [class*="gap-6"] {
-    gap: 0.875rem;
-  }
-  .cloudie-page [class*="gap-5"] {
-    gap: 0.75rem;
-  }
-  .cloudie-page [class*="p-8"] {
-    padding: 1rem;
-  }
-  .cloudie-page [class*="p-6"] {
-    padding: 1rem;
-  }
-  .cloudie-page [class*="px-8"] {
-    padding-inline: 1rem;
-  }
-  .cloudie-page [class*="py-8"] {
-    padding-block: 1rem;
-  }
-  .cloudie-page [class*="rounded-2xl"] {
-    border-radius: 1.1rem;
-  }
-  .cloudie-page [class*="rounded-3xl"] {
-    border-radius: 1.25rem;
-  }
-  .cloudie-page [class*="text-4xl"] {
-    font-size: 2rem;
-    line-height: 1.05;
-  }
-  .cloudie-page [class*="text-3xl"] {
-    font-size: 1.65rem;
-    line-height: 1.08;
-  }
-  .cloudie-page [class*="sm:flex-row"] {
-    flex-direction: column;
-  }
-  .cloudie-page .data-row {
-    min-height: 3.5rem;
-    padding: 0.65rem;
-  }
-  .cloudie-page .vtu-panel {
-    padding: 0.9rem;
-  }
-  .cloudie-page .vtu-receipt-row {
-    gap: 0.75rem;
-    align-items: flex-start;
-  }
-  .cloudie-page [data-slot="card-header"] {
-    padding-inline: 1rem;
-  }
-  .cloudie-page [data-slot="card-content"] {
-    padding-inline: 1rem;
-  }
-  .cloudie-page [data-slot="card-footer"] {
-    padding-inline: 1rem;
-  }
-  .cloudie-page table {
-    font-size: 0.78rem;
-    min-width: 620px;
-  }
-  .cloudie-page th,
-  .cloudie-page td {
-    white-space: nowrap;
-    padding: 0.65rem 0.75rem;
-  }
-  .cloudie-page [role="dialog"] {
-    max-height: calc(100dvh - 1rem);
-    overflow-y: auto;
-  }
-}
-@media (max-width: 380px) {
-  .cloudie-page [class*="text-2xl"] {
-    font-size: 1.3rem;
-  }
-}
-
-/* CLOUDIE MODERN APP LAYER — shared customer dashboard language */
-@layer components {
-  .cloudie-dashboard .cloudie-wallet-card {
-    position: relative;
-    background:
-      radial-gradient(
-        circle at 88% 12%,
-        color-mix(in srgb, var(--primary) 16%, transparent),
-        transparent 32%
-      ),
-      radial-gradient(
-        circle at 8% 100%,
-        color-mix(in srgb, var(--accent) 10%, transparent),
-        transparent 34%
-      ),
-      var(--card);
-    box-shadow: 0 28px 70px -44px hsl(var(--primary) / 0.72);
-  }
-  .cloudie-dashboard .cloudie-wallet-strip {
-    background: linear-gradient(
-      90deg,
-      var(--primary),
-      color-mix(in srgb, var(--accent) 76%, var(--primary))
-    );
-  }
-  .cloudie-dashboard .cloudie-wallet-icon {
-    background: color-mix(in srgb, var(--primary) 18%, var(--card));
-    color: var(--primary);
-    border: 1px solid color-mix(in srgb, var(--primary) 28%, var(--border));
-  }
-  .cloudie-dashboard [data-slot="card"],
-  .cloudie-dashboard .rounded-2xl,
-  .cloudie-dashboard .rounded-3xl {
-    border-color: color-mix(in srgb, var(--border) 88%, transparent);
-  }
-  .cloudie-dashboard .interactive-card:hover {
-    border-color: color-mix(in srgb, var(--primary) 34%, var(--border));
-    box-shadow: 0 18px 42px -30px hsl(var(--primary) / 0.45);
-  }
-
-  @media (max-width: 639px) {
-    .cloudie-dashboard {
-      padding-bottom: 0.5rem;
-    }
-    .cloudie-dashboard .cloudie-wallet-card [data-slot="card-content"],
-    .cloudie-dashboard .rounded-2xl[data-slot="card-content"] {
-      padding: 1rem;
-    }
-    .cloudie-dashboard .cloudie-wallet-card .cloudie-wallet-icon {
-      width: 3rem;
-      height: 3rem;
-      border-radius: 0.9rem;
-    }
-    .cloudie-dashboard .cloudie-wallet-card .text-3xl {
-      font-size: 1.8rem;
-    }
-    .cloudie-dashboard nav[aria-label="Quick actions"] {
-      grid-template-columns: repeat(4, minmax(0, 1fr));
-    }
-    .cloudie-dashboard nav[aria-label="Quick actions"] a {
-      border-radius: 1rem;
-      background: var(--surface-2);
-      border-color: var(--border);
-    }
-  }
-}
-
-@layer components {
-  .cloudie-dashboard .text-3xl {
-    font-size: 1.875rem;
-  }
-
-  .cloudie-marketplace [data-slot="card"] {
-    border-color: color-mix(in srgb, var(--border) 88%, transparent);
-  }
-  .cloudie-marketplace > .mb-4:first-child,
-  .cloudie-marketplace > .mb-5:first-child {
-    padding: 0.25rem 0;
-  }
-  .cloudie-marketplace .group {
-    transition:
-      transform var(--duration-base) var(--ease-out-quint),
-      box-shadow var(--duration-base) var(--ease-out-quint),
-      border-color var(--duration-base) var(--ease-out-quint);
-  }
-  .cloudie-marketplace .group:hover {
-    border-color: color-mix(in srgb, var(--primary) 28%, var(--border));
-    box-shadow: 0 20px 48px -34px hsl(var(--primary) / 0.42);
-  }
-  .cloudie-marketplace .group button:first-child {
-    background:
-      radial-gradient(
-        circle at 50% 0%,
-        color-mix(in srgb, var(--primary) 10%, transparent),
-        transparent 55%
-      ),
-      var(--muted);
-  }
-  .cloudie-marketplace .group .text-primary {
-    text-shadow: 0 0 20px hsl(var(--primary) / 0.18);
-  }
-  @media (max-width: 639px) {
-    .cloudie-marketplace {
-      padding-bottom: 1rem;
-    }
-    .cloudie-marketplace [data-slot="card"] {
-      border-radius: 1.1rem;
-    }
-    .cloudie-marketplace input,
-    .cloudie-marketplace select {
-      border-radius: 0.9rem;
-    }
-  }
-}
-
-/* CLOUDIE WALLET + TRANSACTIONS APP SURFACES */
-@layer components {
-  .cloudie-wallet-page,
-  .cloudie-transactions-page {
-    min-width: 0;
-  }
-  .cloudie-wallet-page .cloudie-balance-card {
-    position: relative;
-    overflow: hidden;
-    border: 1px solid color-mix(in srgb, var(--primary) 24%, var(--border));
-    background:
-      radial-gradient(
-        circle at 92% 8%,
-        color-mix(in srgb, var(--primary) 18%, transparent),
-        transparent 34%
-      ),
-      radial-gradient(
-        circle at 5% 100%,
-        color-mix(in srgb, var(--accent) 9%, transparent),
-        transparent 38%
-      ),
-      var(--card);
-    box-shadow: 0 26px 64px -44px hsl(var(--primary) / 0.7);
-  }
-  .cloudie-wallet-page .cloudie-activity-row,
-  .cloudie-transactions-page .cloudie-transaction-row {
-    border: 1px solid transparent;
-    transition:
-      background-color var(--duration-fast) var(--ease-out-quint),
-      border-color var(--duration-fast) var(--ease-out-quint),
-      transform var(--duration-fast) var(--ease-out-quint);
-  }
-  .cloudie-wallet-page .cloudie-activity-row:hover,
-  .cloudie-transactions-page .cloudie-transaction-row:hover {
-    border-color: color-mix(in srgb, var(--primary) 18%, var(--border));
-    background: color-mix(in srgb, var(--primary) 5%, var(--card));
-  }
-  .cloudie-wallet-page .cloudie-flow-icon,
-  .cloudie-transactions-page .cloudie-flow-icon {
-    border: 1px solid color-mix(in srgb, var(--primary) 16%, var(--border));
-  }
-  .cloudie-transactions-page .cloudie-filter-bar {
-    scrollbar-width: none;
-    -webkit-overflow-scrolling: touch;
-  }
-  .cloudie-transactions-page .cloudie-filter-bar::-webkit-scrollbar {
-    display: none;
-  }
-  @media (max-width: 639px) {
-    .cloudie-wallet-page,
-    .cloudie-transactions-page {
-      padding-bottom: 0.5rem;
-    }
-    .cloudie-wallet-page .cloudie-balance-card [data-slot="card-content"] {
-      padding: 1rem;
-    }
-    .cloudie-wallet-page .cloudie-balance-amount {
-      font-size: 2.15rem;
-    }
-    .cloudie-wallet-page .cloudie-activity-row,
-    .cloudie-transactions-page .cloudie-transaction-row {
-      padding: 0.7rem 0.65rem;
-      border-radius: 0.9rem;
-    }
-    .cloudie-transactions-page .cloudie-filter-bar {
-      flex-wrap: nowrap;
-      overflow-x: auto;
-      padding-bottom: 0.2rem;
-    }
-    .cloudie-transactions-page .cloudie-filter-bar > * {
-      flex: 0 0 auto;
-    }
-  }
-}
-
-/* Document surfaces sit inside the same palette as the rest of the app. */
-@layer components {
-  .cloudie-doc-shell {
-    min-height: 100%;
-  }
-  /* Printed artefacts (labels, receipts, generated documents) are rendered on a
-     white sheet on purpose. `paper-surface` marks those subtrees so the legacy
-     utility bridge below cannot repaint paper as app chrome. */
-  .paper-surface {
-    color-scheme: light;
-  }
-  .cloudie-doc-shell .interactive-card {
-    border-color: var(--border);
-    box-shadow: 0 8px 24px -20px hsl(var(--shadow-color) / 0.28);
-  }
-  .cloudie-doc-shell .interactive-card:hover {
-    border-color: color-mix(in srgb, var(--primary) 28%, var(--border));
-    box-shadow: 0 20px 42px -30px hsl(var(--primary) / 0.25);
-  }
-  .cloudie-doc-hero {
-    background: var(--card);
-    color: var(--foreground);
-    border: 1px solid var(--border);
-    box-shadow: 0 28px 60px -40px hsl(var(--shadow-color) / 0.9);
-  }
-  .cloudie-doc-balance {
-    background: var(--surface-2);
-    color: var(--foreground);
-    border: 1px solid var(--border);
-    box-shadow: 0 26px 58px -38px hsl(var(--shadow-color) / 0.9);
-  }
-  .cloudie-doc-bottom-dock {
-    background: color-mix(in srgb, var(--card) 94%, transparent);
-    border: 1px solid var(--border);
-    box-shadow: 0 18px 42px -24px rgb(15 23 42 / 0.28);
-    backdrop-filter: blur(18px);
-  }
-  @media (max-width: 639px) {
-    .cloudie-doc-hero {
-      border-radius: 1.25rem;
-    }
-    .cloudie-doc-balance {
-      border-radius: 1.25rem;
-    }
-  }
-}
-
-/* ════════════════════════════════════════════════════════════════════
-   LEGACY LIGHT-MODE UTILITY BRIDGE
-
-   Every page in this product was written against a light theme, so a great many
-   elements carry classes like `text-slate-900 border-slate-200 bg-slate-50`.
-   Most of them are paired with a `dark:` variant, but ~800 individual utilities
-   across ~58 files are not — and on a pure-black page `text-slate-900` is
-   invisible ink.
-
-   Rather than rewrite two thousand class strings (and risk changing the ones
-   that were deliberate), this block re-points the legacy grey and status ramps
-   at the design tokens. It works by SPECIFICITY, which is what makes it safe:
-
-     • these selectors are (0,1,0) — exactly a Tailwind utility's weight, and
-       they sit later in the `utilities` layer, so they win;
-     • a `dark:` variant compiles to `:is(.dark *)`, i.e. (0,2,0), so any element
-       that ALREADY has a dark counterpart keeps it untouched.
-
-   Therefore: pages with a proper dark pairing are unaffected, and elements that
-   only ever had a light-mode colour now inherit the palette.
-
-   Paper is excluded. `:not(:where(.paper-surface *))` contributes zero
-   specificity, so the exclusion costs nothing and printed sheets, labels and
-   generated documents keep their white background and dark ink.
-
-   This is a migration shim: it is deleted once the last page has been ported to
-   semantic tokens.
-   ════════════════════════════════════════════════════════════════════ */
-@layer utilities {
-  /* Grey ink: strong greys were "body text", softer ones "secondary text". */
-  [class*="text-slate-9"]:not(:where(.paper-surface *)),
-  [class*="text-slate-8"]:not(:where(.paper-surface *)),
-  [class*="text-slate-7"]:not(:where(.paper-surface *)),
-  [class*="text-gray-9"]:not(:where(.paper-surface *)),
-  [class*="text-gray-8"]:not(:where(.paper-surface *)),
-  [class*="text-gray-7"]:not(:where(.paper-surface *)),
-  [class*="text-zinc-9"]:not(:where(.paper-surface *)),
-  [class*="text-zinc-8"]:not(:where(.paper-surface *)),
-  [class*="text-zinc-7"]:not(:where(.paper-surface *)),
-  [class*="text-neutral-9"]:not(:where(.paper-surface *)),
-  [class*="text-neutral-8"]:not(:where(.paper-surface *)) {
-    color: var(--foreground);
-  }
-
-  [class*="text-slate-6"]:not(:where(.paper-surface *)),
-  [class*="text-slate-5"]:not(:where(.paper-surface *)),
-  [class*="text-slate-4"]:not(:where(.paper-surface *)),
-  [class*="text-slate-3"]:not(:where(.paper-surface *)),
-  [class*="text-slate-2"]:not(:where(.paper-surface *)),
-  [class*="text-slate-1"]:not(:where(.paper-surface *)),
-  [class*="text-gray-6"]:not(:where(.paper-surface *)),
-  [class*="text-gray-5"]:not(:where(.paper-surface *)),
-  [class*="text-gray-4"]:not(:where(.paper-surface *)),
-  [class*="text-gray-3"]:not(:where(.paper-surface *)),
-  [class*="text-gray-2"]:not(:where(.paper-surface *)),
-  [class*="text-gray-1"]:not(:where(.paper-surface *)),
-  [class*="text-zinc-6"]:not(:where(.paper-surface *)),
-  [class*="text-zinc-5"]:not(:where(.paper-surface *)),
-  [class*="text-zinc-4"]:not(:where(.paper-surface *)),
-  [class*="text-zinc-3"]:not(:where(.paper-surface *)),
-  [class*="text-neutral-6"]:not(:where(.paper-surface *)),
-  [class*="text-neutral-5"]:not(:where(.paper-surface *)),
-  [class*="text-neutral-4"]:not(:where(.paper-surface *)) {
-    color: var(--muted-foreground);
-  }
-
-  /* Grey fills and hairlines. */
-  [class*="bg-slate-1"]:not(:where(.paper-surface *)),
-  [class*="bg-slate-2"]:not(:where(.paper-surface *)),
-  [class*="bg-slate-3"]:not(:where(.paper-surface *)),
-  [class*="bg-slate-7"]:not(:where(.paper-surface *)),
-  [class*="bg-slate-8"]:not(:where(.paper-surface *)),
-  [class*="bg-slate-9"]:not(:where(.paper-surface *)),
-  [class*="bg-gray-1"]:not(:where(.paper-surface *)),
-  [class*="bg-gray-2"]:not(:where(.paper-surface *)),
-  [class*="bg-gray-3"]:not(:where(.paper-surface *)),
-  [class*="bg-gray-7"]:not(:where(.paper-surface *)),
-  [class*="bg-gray-8"]:not(:where(.paper-surface *)),
-  [class*="bg-gray-9"]:not(:where(.paper-surface *)),
-  [class*="bg-zinc-1"]:not(:where(.paper-surface *)),
-  [class*="bg-zinc-2"]:not(:where(.paper-surface *)),
-  [class*="bg-zinc-3"]:not(:where(.paper-surface *)),
-  [class*="bg-zinc-8"]:not(:where(.paper-surface *)),
-  [class*="bg-zinc-9"]:not(:where(.paper-surface *)) {
-    background-color: var(--surface-2);
-  }
-
-  [class*="border-slate-"]:not(:where(.paper-surface *)),
-  [class*="border-gray-"]:not(:where(.paper-surface *)),
-  [class*="border-zinc-"]:not(:where(.paper-surface *)),
-  [class*="divide-slate-"]:not(:where(.paper-surface *)),
-  [class*="divide-gray-"]:not(:where(.paper-surface *)) {
-    border-color: var(--border);
-  }
-
-  /* Status ink: the hue is the meaning, so it maps to the status token. */
-  [class*="text-emerald-"]:not(:where(.paper-surface *)),
-  [class*="text-green-"]:not(:where(.paper-surface *)) {
-    color: var(--success);
-  }
-  [class*="text-amber-"]:not(:where(.paper-surface *)),
-  [class*="text-orange-"]:not(:where(.paper-surface *)),
-  [class*="text-yellow-"]:not(:where(.paper-surface *)) {
-    color: var(--warning);
-  }
-  [class*="text-red-"]:not(:where(.paper-surface *)),
-  [class*="text-rose-"]:not(:where(.paper-surface *)) {
-    color: var(--error);
-  }
-  [class*="text-blue-"]:not(:where(.paper-surface *)),
-  [class*="text-sky-"]:not(:where(.paper-surface *)),
-  [class*="text-indigo-"]:not(:where(.paper-surface *)),
-  [class*="text-cyan-"]:not(:where(.paper-surface *)),
-  [class*="text-teal-"]:not(:where(.paper-surface *)) {
-    color: var(--info);
-  }
-
-  /* Tinted status chips (the pale 50/100/200 fills) become the token tint, so
-     the matching text token above keeps its contrast. Saturated 400-600 `bg-*`
-     fills are deliberately left alone: `bg-red-500/10` and `bg-red-500` share a
-     prefix, and flattening an alpha wash into a solid block would be worse than
-     leaving it. */
-  [class*="bg-emerald-50"]:not(:where(.paper-surface *)),
-  [class*="bg-emerald-1"]:not(:where(.paper-surface *)),
-  [class*="bg-emerald-2"]:not(:where(.paper-surface *)),
-  [class*="bg-green-50"]:not(:where(.paper-surface *)),
-  [class*="bg-green-1"]:not(:where(.paper-surface *)),
-  [class*="bg-green-2"]:not(:where(.paper-surface *)) {
-    background-color: color-mix(in srgb, var(--success) 12%, transparent);
-  }
-  [class*="bg-amber-50"]:not(:where(.paper-surface *)),
-  [class*="bg-amber-1"]:not(:where(.paper-surface *)),
-  [class*="bg-amber-2"]:not(:where(.paper-surface *)),
-  [class*="bg-orange-50"]:not(:where(.paper-surface *)),
-  [class*="bg-orange-1"]:not(:where(.paper-surface *)),
-  [class*="bg-orange-2"]:not(:where(.paper-surface *)),
-  [class*="bg-yellow-50"]:not(:where(.paper-surface *)),
-  [class*="bg-yellow-1"]:not(:where(.paper-surface *)),
-  [class*="bg-yellow-2"]:not(:where(.paper-surface *)) {
-    background-color: color-mix(in srgb, var(--warning) 12%, transparent);
-  }
-  [class*="bg-red-50"]:not(:where(.paper-surface *)),
-  [class*="bg-red-1"]:not(:where(.paper-surface *)),
-  [class*="bg-red-2"]:not(:where(.paper-surface *)),
-  [class*="bg-rose-50"]:not(:where(.paper-surface *)),
-  [class*="bg-rose-1"]:not(:where(.paper-surface *)),
-  [class*="bg-rose-2"]:not(:where(.paper-surface *)) {
-    background-color: color-mix(in srgb, var(--error) 12%, transparent);
-  }
-  [class*="bg-blue-50"]:not(:where(.paper-surface *)),
-  [class*="bg-blue-1"]:not(:where(.paper-surface *)),
-  [class*="bg-blue-2"]:not(:where(.paper-surface *)),
-  [class*="bg-indigo-1"]:not(:where(.paper-surface *)),
-  [class*="bg-indigo-2"]:not(:where(.paper-surface *)),
-  [class*="bg-sky-50"]:not(:where(.paper-surface *)),
-  [class*="bg-sky-1"]:not(:where(.paper-surface *)),
-  [class*="bg-sky-2"]:not(:where(.paper-surface *)) {
-    background-color: color-mix(in srgb, var(--info) 12%, transparent);
-  }
-
-  /* Hairlines around status chips. */
-  [class*="border-emerald-2"]:not(:where(.paper-surface *)),
-  [class*="border-emerald-3"]:not(:where(.paper-surface *)),
-  [class*="border-green-2"]:not(:where(.paper-surface *)),
-  [class*="border-green-3"]:not(:where(.paper-surface *)) {
-    border-color: color-mix(in srgb, var(--success) 30%, transparent);
-  }
-  [class*="border-amber-2"]:not(:where(.paper-surface *)),
-  [class*="border-amber-50"]:not(:where(.paper-surface *)),
-  [class*="border-amber-3"]:not(:where(.paper-surface *)),
-  [class*="border-amber-5"]:not(:where(.paper-surface *)),
-  [class*="border-orange-2"]:not(:where(.paper-surface *)) {
-    border-color: color-mix(in srgb, var(--warning) 30%, transparent);
-  }
-  [class*="border-red-2"]:not(:where(.paper-surface *)),
-  [class*="border-red-3"]:not(:where(.paper-surface *)),
-  [class*="border-red-5"]:not(:where(.paper-surface *)) {
-    border-color: color-mix(in srgb, var(--error) 30%, transparent);
-  }
-  [class*="border-blue-2"]:not(:where(.paper-surface *)),
-  [class*="border-blue-3"]:not(:where(.paper-surface *)),
-  [class*="border-blue-5"]:not(:where(.paper-surface *)) {
-    border-color: color-mix(in srgb, var(--info) 30%, transparent);
+    box-shadow: 0 0 0 0 transparent;
   }
 }

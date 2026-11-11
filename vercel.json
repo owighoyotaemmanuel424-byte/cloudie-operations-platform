@@ -4,9 +4,12 @@
   "installCommand": "npm install --include=dev --legacy-peer-deps --no-audit --no-fund",
   "buildCommand": "npm run build",
   "outputDirectory": "dist",
+  "functions": {
+    "api/[...path].ts": { "maxDuration": 30 }
+  },
   "rewrites": [
     {
-      "source": "/(.*)",
+      "source": "/((?!api/).*)",
       "destination": "/index.html"
     }
   ],
