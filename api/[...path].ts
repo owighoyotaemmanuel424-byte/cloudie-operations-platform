@@ -1,5 +1,5 @@
 import { getRequestListener } from "@hono/node-server";
-import { app } from "../backend/src/server.ts";
+import { app } from "../backend/src/server.js";
 
 // One Vercel Node function for every API route. Hono owns routing, CORS,
 // cookies, CSRF, authorization and error handling; the same app is mounted
