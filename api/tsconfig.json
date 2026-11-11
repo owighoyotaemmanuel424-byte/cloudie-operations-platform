@@ -6,14 +6,11 @@
     "strict": true,
     "esModuleInterop": true,
     "skipLibCheck": true,
-    "outDir": "dist",
-    "rootDir": "src",
     "types": [
       "node"
-    ],
-    "noEmitOnError": true
+    ]
   },
   "include": [
-    "src/**/*.ts"
+    "[...path].ts"
   ]
 }
